@@ -332,7 +332,8 @@ class ApiService {
           await _makeRequest('GET', '/balance-requests/merchant/$merchantId');
       if (response is List) {
         return response
-            .map((json) => BalanceRequest.fromJson(json as Map<String, dynamic>))
+            .map(
+                (json) => BalanceRequest.fromJson(json as Map<String, dynamic>))
             .toList();
       }
       return [];
