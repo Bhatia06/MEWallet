@@ -6,6 +6,7 @@ from merchant_routes import router as merchant_router
 from user_routes import router as user_router
 from transaction_routes import router as transaction_router
 from balance_request_routes import router as balance_request_router
+from link_request_routes import router as link_request_router
 from database import test_connection
 import uvicorn
 
@@ -75,6 +76,7 @@ app.include_router(merchant_router)
 app.include_router(user_router)
 app.include_router(transaction_router)
 app.include_router(balance_request_router)
+app.include_router(link_request_router)
 
 @app.on_event("startup")
 async def startup_event():

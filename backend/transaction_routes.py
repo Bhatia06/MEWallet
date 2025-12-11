@@ -315,3 +315,35 @@ async def get_transactions(merchant_id: str, user_id: str, limit: int = 50):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred: {str(e)}"
         )
+
+
+@router.get("/user-transactions/{user_id}", response_model=list)
+async def get_user_transactions(user_id: str, limit: int = 100):
+    """Get all transaction history for a user across all merchants"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Get all transactions for this user
+        transactions_response = supabase.table("transactions").select("*").eq(
+            "user_id", user_id
+        ).order("created_at", desc=True).limit(limit).execute()
+        
+        transactions = transactions_response.data if transactions_response.data else []
+        
+        # Enrich transactions with merchant store names
+        for txn in transactions:
+            merchant = supabase.table("merchants").select("store_name").eq(
+                "id", txn["merchant_id"]
+            ).execute()
+            if merchant.data:
+                txn["store_name"] = merchant.data[0]["store_name"]
+            else:
+                txn["store_name"] = "Unknown Merchant"
+        
+        return transactions
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred: {str(e)}"
+        )

@@ -301,6 +301,25 @@ class ApiService {
     return [];
   }
 
+  Future<List<Transaction>> getUserTransactions({
+    required String userId,
+    required String token,
+    int limit = 100,
+  }) async {
+    final response = await _makeRequest(
+      'GET',
+      '/link/user-transactions/$userId?limit=$limit',
+      token: token,
+    );
+
+    if (response is List) {
+      return response
+          .map((e) => Transaction.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    return [];
+  }
+
   // Health check
   Future<bool> checkHealth() async {
     try {
@@ -349,5 +368,42 @@ class ApiService {
 
   Future<Map<String, dynamic>> rejectBalanceRequest(int requestId) async {
     return await _makeRequest('POST', '/balance-requests/reject/$requestId');
+  }
+
+  // Link Request APIs
+  Future<Map<String, dynamic>> createLinkRequest({
+    required String merchantId,
+    required String userId,
+    required String pin,
+  }) async {
+    return await _makeRequest('POST', '/link-requests/create', body: {
+      'merchant_id': merchantId,
+      'user_id': userId,
+      'pin': pin,
+    });
+  }
+
+  Future<List<LinkRequest>> getMerchantLinkRequests(String merchantId) async {
+    try {
+      final response =
+          await _makeRequest('GET', '/link-requests/merchant/$merchantId');
+      if (response is List) {
+        return response
+            .map((json) => LinkRequest.fromJson(json as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print('Error getting merchant link requests: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> acceptLinkRequest(int requestId) async {
+    return await _makeRequest('POST', '/link-requests/accept/$requestId');
+  }
+
+  Future<Map<String, dynamic>> rejectLinkRequest(int requestId) async {
+    return await _makeRequest('POST', '/link-requests/reject/$requestId');
   }
 }

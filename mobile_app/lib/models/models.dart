@@ -104,6 +104,7 @@ class Transaction {
   final String transactionType;
   final double balanceAfter;
   final DateTime? createdAt;
+  final String? storeName;
 
   Transaction({
     required this.id,
@@ -113,6 +114,7 @@ class Transaction {
     required this.transactionType,
     required this.balanceAfter,
     this.createdAt,
+    this.storeName,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
@@ -126,6 +128,7 @@ class Transaction {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : null,
+      storeName: json['store_name'],
     );
   }
 
@@ -168,6 +171,7 @@ class BalanceRequest {
   final String status;
   final String? userName;
   final DateTime? createdAt;
+  final String? requestType;
 
   BalanceRequest({
     this.id,
@@ -178,6 +182,7 @@ class BalanceRequest {
     this.status = 'pending',
     this.userName,
     this.createdAt,
+    this.requestType,
   });
 
   factory BalanceRequest.fromJson(Map<String, dynamic> json) {
@@ -192,6 +197,7 @@ class BalanceRequest {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : null,
+      requestType: json['request_type'],
     );
   }
 
@@ -200,6 +206,48 @@ class BalanceRequest {
       'merchant_id': merchantId,
       'user_id': userId,
       'amount': amount,
+      'pin': pin,
+    };
+  }
+}
+
+class LinkRequest {
+  final int? id;
+  final String merchantId;
+  final String userId;
+  final String? pin;
+  final String status;
+  final String? userName;
+  final DateTime? createdAt;
+
+  LinkRequest({
+    this.id,
+    required this.merchantId,
+    required this.userId,
+    this.pin,
+    this.status = 'pending',
+    this.userName,
+    this.createdAt,
+  });
+
+  factory LinkRequest.fromJson(Map<String, dynamic> json) {
+    return LinkRequest(
+      id: json['request_id'] ?? json['id'],
+      merchantId: json['merchant_id'] ?? '',
+      userId: json['user_id'] ?? '',
+      pin: json['pin'],
+      status: json['status'] ?? 'pending',
+      userName: json['user_name'],
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'merchant_id': merchantId,
+      'user_id': userId,
       'pin': pin,
     };
   }

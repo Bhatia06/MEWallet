@@ -123,6 +123,19 @@ class BalanceRequest(BaseModel):
         return v
 
 
+class LinkRequest(BaseModel):
+    """Model for merchant-user link request"""
+    merchant_id: str
+    user_id: str
+    pin: str = Field(..., min_length=4, max_length=6)
+    
+    @validator('pin')
+    def validate_pin(cls, v):
+        if not re.match(r'^\d{4,6}$', v):
+            raise ValueError('PIN must be 4-6 digits')
+        return v
+
+
 # Token Models
 class Token(BaseModel):
     """Model for JWT token"""

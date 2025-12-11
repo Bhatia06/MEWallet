@@ -18,16 +18,23 @@ class MerchantDashboardScreen extends StatefulWidget {
 }
 
 class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   List<MerchantUserLink> _filteredLinks = [];
   List<BalanceRequest> _balanceRequests = [];
+  List<LinkRequest> _linkRequests = [];
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.index == 1) {
+        _loadBalanceRequests();
+      }
+    });
     _searchController.addListener(_filterLinks);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
@@ -35,7 +42,19 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Reload data when app comes to foreground
+    if (state == AppLifecycleState.resumed) {
+      _loadData();
+      if (_tabController.index == 1) {
+        _loadBalanceRequests();
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -67,6 +86,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         authProvider.token!,
       );
       await _loadBalanceRequests();
+      // Force UI update
+      if (mounted) {
+        setState(() {
+          _filteredLinks = walletProvider.links;
+        });
+      }
     }
   }
 
@@ -76,13 +101,16 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
 
     if (authProvider.userId != null && authProvider.token != null) {
       try {
-        final requests = await walletProvider.apiService
+        final balanceReqs = await walletProvider.apiService
             .getMerchantRequests(authProvider.userId!);
+        final linkReqs = await walletProvider.apiService
+            .getMerchantLinkRequests(authProvider.userId!);
         setState(() {
-          _balanceRequests = requests;
+          _balanceRequests = balanceReqs;
+          _linkRequests = linkReqs;
         });
       } catch (e) {
-        print('Error loading balance requests: $e');
+        print('Error loading requests: $e');
       }
     }
   }
@@ -250,7 +278,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.grey.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -358,7 +386,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         child: Row(
           children: [
             CircleAvatar(
-              backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
+              backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
               child: Text(
                 link.userName?.substring(0, 1).toUpperCase() ?? 'U',
                 style: const TextStyle(
@@ -443,8 +471,9 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
 
   Widget _buildRequestsTab() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final totalRequests = _balanceRequests.length + _linkRequests.length;
 
-    if (_balanceRequests.isEmpty) {
+    if (totalRequests == 0) {
       return SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: Center(
@@ -464,7 +493,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Balance requests from users will appear here',
+                  'Link and balance requests from users will appear here',
                   style: TextStyle(
                     fontSize: 14,
                     color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[500],
@@ -478,17 +507,16 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
       );
     }
 
-    return ListView.builder(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      itemCount: _balanceRequests.length,
-      itemBuilder: (context, index) {
-        final request = _balanceRequests[index];
-        return _buildRequestCard(request);
-      },
+      children: [
+        ..._linkRequests.map((request) => _buildLinkRequestCard(request)),
+        ..._balanceRequests.map((request) => _buildBalanceRequestCard(request)),
+      ],
     );
   }
 
-  Widget _buildRequestCard(BalanceRequest request) {
+  Widget _buildLinkRequestCard(LinkRequest request) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Card(
@@ -503,10 +531,142 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Link request',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
+                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
+                  child: Text(
+                    request.userName?.substring(0, 1).toUpperCase() ?? 'U',
+                    style: const TextStyle(
+                      color: AppTheme.primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        request.userName ?? 'User',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                        ),
+                      ),
+                      Text(
+                        request.userId,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.link,
+                  color: AppTheme.primaryColor,
+                  size: 28,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _acceptLinkRequest(request),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text('Accept'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.successColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _rejectLinkRequest(request),
+                    icon: const Icon(Icons.close, size: 18),
+                    label: const Text('Reject'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.errorColor,
+                      side: const BorderSide(color: AppTheme.errorColor),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBalanceRequestCard(BalanceRequest request) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      color: isDark ? const Color(0xFF252838) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Balance request',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
                   child: Text(
                     request.userName?.substring(0, 1).toUpperCase() ?? 'U',
                     style: const TextStyle(
@@ -592,7 +752,6 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   Future<void> _acceptRequest(BalanceRequest request) async {
-    final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
     try {
@@ -620,7 +779,6 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   Future<void> _rejectRequest(BalanceRequest request) async {
-    final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
     try {
@@ -630,6 +788,60 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Request from ${request.userName} rejected'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _acceptLinkRequest(LinkRequest request) async {
+    final walletProvider = context.read<WalletProvider>();
+
+    try {
+      await walletProvider.apiService.acceptLinkRequest(request.id!);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Link request from ${request.userName} accepted!'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectLinkRequest(LinkRequest request) async {
+    final walletProvider = context.read<WalletProvider>();
+
+    try {
+      await walletProvider.apiService.rejectLinkRequest(request.id!);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Link request from ${request.userName} rejected'),
             backgroundColor: AppTheme.errorColor,
           ),
         );
