@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 
@@ -124,6 +125,158 @@ class AuthProvider with ChangeNotifier {
       );
 
       _isAuthenticated = true;
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // Google Sign-In
+  Future<Map<String, dynamic>> signInWithGoogle(
+      {required String userType}) async {
+    _setLoading(true);
+    _error = null;
+
+    try {
+      // Configure Google Sign-In
+      // On Android, the OAuth client is automatically configured via google-services.json
+      // The serverClientId (Web client ID) is only needed for backend token verification
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+        serverClientId:
+            '443131879916-rfdrg8e0fob1f325bbpkl1ppf1n5lcjp.apps.googleusercontent.com',
+      );
+
+      // Sign out first to ensure account picker shows
+      await googleSignIn.signOut();
+
+      // Trigger the authentication flow
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
+      if (googleUser == null) {
+        // User cancelled the sign-in
+        throw ApiException('Google sign-in cancelled');
+      }
+
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      if (googleAuth.idToken == null) {
+        throw ApiException('Failed to get Google ID token');
+      }
+
+      // Send to backend for verification
+      final response = await _apiService.loginWithGoogle(
+        idToken: googleAuth.idToken!,
+        userType: userType,
+      );
+
+      // Check if profile needs completion
+      if (response.profileCompleted == false) {
+        // Return data for profile completion screen
+        return {
+          'needs_profile': true,
+          'user_type': userType,
+          'id': response.id,
+          'name': response.name,
+          'owner_name': response.ownerName ?? '',
+          'google_email': response.googleEmail ?? '',
+          'token': response.accessToken,
+        };
+      }
+
+      // Profile already complete, save and login
+      await _saveAuthData(
+        id: response.id,
+        name: response.name,
+        token: response.accessToken,
+        userType: userType,
+      );
+
+      _isAuthenticated = true;
+      notifyListeners();
+
+      return {'needs_profile': false};
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // Complete Merchant OAuth Profile
+  Future<void> completeMerchantProfile({
+    required String merchantId,
+    required String storeName,
+    required String ownerName,
+    String? phone,
+    String? storeAddress,
+  }) async {
+    _setLoading(true);
+    _error = null;
+
+    try {
+      await _apiService.completeMerchantProfile(
+        merchantId: merchantId,
+        storeName: storeName,
+        ownerName: ownerName,
+        phone: phone,
+        storeAddress: storeAddress,
+      );
+
+      // Profile completed, update local state
+      await _storageService.saveUserId(merchantId);
+      await _storageService.saveUserName(storeName);
+      await _storageService.saveUserType('merchant');
+
+      _userId = merchantId;
+      _userName = storeName;
+      _userType = 'merchant';
+      _isAuthenticated = true;
+
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // Complete User OAuth Profile
+  Future<void> completeUserProfile({
+    required String userId,
+    required String userName,
+    String? phone,
+  }) async {
+    _setLoading(true);
+    _error = null;
+
+    try {
+      await _apiService.completeUserProfile(
+        userId: userId,
+        userName: userName,
+        phone: phone,
+      );
+
+      // Profile completed, update local state
+      await _storageService.saveUserId(userId);
+      await _storageService.saveUserName(userName);
+      await _storageService.saveUserType('user');
+
+      _userId = userId;
+      _userName = userName;
+      _userType = 'user';
+      _isAuthenticated = true;
+
       notifyListeners();
     } catch (e) {
       _error = e.toString();

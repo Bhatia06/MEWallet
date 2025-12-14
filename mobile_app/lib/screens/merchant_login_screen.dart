@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../services/api_service.dart';
 import '../utils/theme.dart';
 import 'merchant_dashboard_screen.dart';
+import 'merchant_oauth_profile_screen.dart';
 
 class MerchantLoginScreen extends StatefulWidget {
   const MerchantLoginScreen({super.key});
@@ -170,6 +171,65 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
                             size: 20,
                           )
                         : const Text('Login', style: TextStyle(fontSize: 18)),
+                  ),
+                  const SizedBox(height: 20),
+                  const Row(
+                    children: [
+                      Expanded(child: Divider()),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('OR', style: TextStyle(color: Colors.grey)),
+                      ),
+                      Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  OutlinedButton.icon(
+                    onPressed: authProvider.isLoading
+                        ? null
+                        : () async {
+                            try {
+                              final result = await authProvider
+                                  .signInWithGoogle(userType: 'merchant');
+                              if (mounted) {
+                                if (result['needs_profile'] == true) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          MerchantOAuthProfileScreen(
+                                        merchantId: result['id'],
+                                        ownerName: result['owner_name'],
+                                        googleEmail: result['google_email'],
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const MerchantDashboardScreen()),
+                                  );
+                                }
+                              }
+                            } on ApiException catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(e.message),
+                                      backgroundColor: AppTheme.errorColor),
+                                );
+                              }
+                            }
+                          },
+                    icon: const Icon(Icons.g_mobiledata, size: 32),
+                    label: const Text('Continue with Google',
+                        style: TextStyle(fontSize: 16)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: BorderSide(color: Colors.grey.shade400),
+                    ),
                   ),
                 ],
               ),

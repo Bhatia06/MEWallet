@@ -122,11 +122,16 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Merchant Dashboard'),
+        title: const Text('Dashboard'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () {
+              // TODO: Navigate to settings/profile page
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Settings coming soon')),
+              );
+            },
           ),
           IconButton(
             icon: Icon(
@@ -140,16 +145,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await authProvider.logout();
-              if (mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
-                  (route) => false,
-                );
-              }
-            },
+            onPressed: () => _showLogoutConfirmation(authProvider),
           ),
         ],
       ),
@@ -201,17 +197,6 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AddUserScreen()),
-          );
-          if (result == true) _loadData();
-        },
-        icon: const Icon(Icons.person_add),
-        label: const Text('Add User'),
-      ),
     );
   }
 
@@ -222,26 +207,76 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         gradient: AppTheme.primaryGradient,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          const Text(
-            'Welcome,',
-            style: TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            authProvider.userName ?? 'Merchant',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Welcome,',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  authProvider.userName ?? 'Merchant',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'ID: ${authProvider.userId}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'ID: ${authProvider.userId}',
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
+          const SizedBox(width: 16),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AddUserScreen()),
+                  );
+                  if (result == true) _loadData();
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(
+                        Icons.person_add,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Add User',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -365,14 +400,29 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         else if (walletProvider.links.isEmpty)
           _buildEmptyState()
         else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _filteredLinks.length,
-            itemBuilder: (context, index) {
-              final link = _filteredLinks[index];
-              return _buildUserCard(link);
-            },
+          Column(
+            children: [
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _filteredLinks.length,
+                itemBuilder: (context, index) {
+                  final link = _filteredLinks[index];
+                  return _buildUserCard(link);
+                },
+              ),
+              const SizedBox(height: 16),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _loadData,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.primaryColor,
+                  ),
+                ),
+              ),
+            ],
           ),
       ],
     );
@@ -854,6 +904,53 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
             content: Text(e.toString()),
             backgroundColor: AppTheme.errorColor,
           ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showLogoutConfirmation(AuthProvider authProvider) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF252838) : Colors.white,
+        title: Text(
+          'Logout Confirmation',
+          style: TextStyle(
+            color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to log out? You will need to enter your merchant ID and password again to login.',
+          style: TextStyle(
+            color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.errorColor,
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await authProvider.logout();
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (route) => false,
         );
       }
     }

@@ -1,14 +1,21 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from database import get_supabase_client
 from models import UserCreate, UserLogin, UserResponse, Token
 from utils import hash_password, verify_password, generate_user_id, create_access_token
+from auth_middleware import get_current_user, verify_resource_ownership
 from datetime import timedelta
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from fastapi import Request
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/user", tags=["User"])
 
 
 @router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def register_user(user: UserCreate):
+@limiter.limit("5/minute")
+async def register_user(request: Request, user: UserCreate):
     """Register a new user"""
     try:
         supabase = get_supabase_client()
@@ -63,7 +70,8 @@ async def register_user(user: UserCreate):
 
 
 @router.post("/login", response_model=dict)
-async def login_user(user: UserLogin):
+@limiter.limit("10/minute")
+async def login_user(request: Request, user: UserLogin):
     """Login user"""
     try:
         supabase = get_supabase_client()
@@ -110,9 +118,12 @@ async def login_user(user: UserLogin):
 
 
 @router.get("/profile/{user_id}", response_model=dict)
-async def get_user_profile(user_id: str):
+async def get_user_profile(user_id: str, current_user: dict = Depends(get_current_user)):
     """Get user profile"""
     try:
+        # Verify user can only access their own profile
+        verify_resource_ownership(current_user, user_id)
+        
         supabase = get_supabase_client()
         
         result = supabase.table("users").select("id, user_name, created_at").eq("id", user_id).execute()
@@ -135,9 +146,12 @@ async def get_user_profile(user_id: str):
 
 
 @router.get("/linked-merchants/{user_id}", response_model=list)
-async def get_linked_merchants(user_id: str):
+async def get_linked_merchants(user_id: str, current_user: dict = Depends(get_current_user)):
     """Get all merchants linked to a user"""
     try:
+        # Verify user can only access their own links
+        verify_resource_ownership(current_user, user_id)
+        
         supabase = get_supabase_client()
         
         # Get all merchant-user links

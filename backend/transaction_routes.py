@@ -1,13 +1,20 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from database import get_supabase_client
 from models import MerchantUserLink, AddBalance, ProcessTransaction, TransactionResponse
 from utils import hash_password, verify_password
+from auth_middleware import get_current_user
+from datetime import datetime, timezone, timedelta
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/link", tags=["Merchant-User Link"])
 
 
 @router.post("/create", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def create_link(link_data: MerchantUserLink):
+@limiter.limit("10/minute")
+async def create_link(request: Request, link_data: MerchantUserLink, current_user: dict = Depends(get_current_user)):
     """Create a link between merchant and user with PIN"""
     try:
         supabase = get_supabase_client()
@@ -74,7 +81,8 @@ async def create_link(link_data: MerchantUserLink):
 
 
 @router.post("/delink", response_model=dict)
-async def delink_merchant(link_data: ProcessTransaction):
+@limiter.limit("10/minute")
+async def delink_merchant(request: Request, link_data: ProcessTransaction, current_user: dict = Depends(get_current_user)):
     """Delink merchant and user with PIN verification"""
     try:
         supabase = get_supabase_client()
@@ -126,7 +134,8 @@ async def delink_merchant(link_data: ProcessTransaction):
 
 
 @router.post("/add-balance", response_model=dict)
-async def add_balance(balance_data: AddBalance):
+@limiter.limit("20/minute")
+async def add_balance(request: Request, balance_data: AddBalance, current_user: dict = Depends(get_current_user)):
     """Add balance to user account for a specific merchant"""
     try:
         supabase = get_supabase_client()
@@ -144,13 +153,6 @@ async def add_balance(balance_data: AddBalance):
         
         link_data = link.data[0]
         
-        # Verify PIN
-        if not verify_password(balance_data.pin, link_data["pin"]):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid PIN"
-            )
-        
         current_balance = link_data["balance"]
         new_balance = current_balance + balance_data.amount
         
@@ -165,13 +167,16 @@ async def add_balance(balance_data: AddBalance):
                 detail="Failed to update balance"
             )
         
-        # Record transaction
+        # Record transaction with IST timestamp
+        ist = timezone(timedelta(hours=5, minutes=30))
+        current_time_ist = datetime.now(ist).isoformat()
         transaction = supabase.table("transactions").insert({
             "merchant_id": balance_data.merchant_id,
             "user_id": balance_data.user_id,
             "amount": balance_data.amount,
             "transaction_type": "credit",
-            "balance_after": new_balance
+            "balance_after": new_balance,
+            "created_at": current_time_ist
         }).execute()
         
         return {
@@ -193,7 +198,8 @@ async def add_balance(balance_data: AddBalance):
 
 
 @router.post("/purchase", response_model=dict)
-async def process_purchase(transaction_data: ProcessTransaction):
+@limiter.limit("30/minute")
+async def process_purchase(request: Request, transaction_data: ProcessTransaction, current_user: dict = Depends(get_current_user)):
     """Process a purchase transaction with PIN validation"""
     try:
         supabase = get_supabase_client()
@@ -218,13 +224,8 @@ async def process_purchase(transaction_data: ProcessTransaction):
                 detail="Invalid PIN"
             )
         
-        # Check sufficient balance
+        # Allow negative balance - no balance check
         current_balance = link_data["balance"]
-        if current_balance < transaction_data.amount:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient balance. Current balance: {current_balance}"
-            )
         
         # Calculate new balance
         new_balance = current_balance - transaction_data.amount
@@ -240,13 +241,16 @@ async def process_purchase(transaction_data: ProcessTransaction):
                 detail="Failed to process transaction"
             )
         
-        # Record transaction
+        # Record transaction with IST timestamp
+        ist = timezone(timedelta(hours=5, minutes=30))
+        current_time_ist = datetime.now(ist).isoformat()
         transaction = supabase.table("transactions").insert({
             "merchant_id": transaction_data.merchant_id,
             "user_id": transaction_data.user_id,
             "amount": transaction_data.amount,
             "transaction_type": "debit",
-            "balance_after": new_balance
+            "balance_after": new_balance,
+            "created_at": current_time_ist
         }).execute()
         
         return {
@@ -268,9 +272,17 @@ async def process_purchase(transaction_data: ProcessTransaction):
 
 
 @router.get("/balance/{merchant_id}/{user_id}", response_model=dict)
-async def get_balance(merchant_id: str, user_id: str):
+async def get_balance(merchant_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
     """Get balance for a specific merchant-user link"""
     try:
+        # Verify user is either the merchant or the user in the link
+        user_id_from_token = current_user.get("sub")
+        if user_id_from_token not in [merchant_id, user_id]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to view this balance"
+            )
+        
         supabase = get_supabase_client()
         
         link = supabase.table("merchant_user_links").select("balance").eq(
@@ -299,9 +311,17 @@ async def get_balance(merchant_id: str, user_id: str):
 
 
 @router.get("/transactions/{merchant_id}/{user_id}", response_model=list)
-async def get_transactions(merchant_id: str, user_id: str, limit: int = 50):
+async def get_transactions(merchant_id: str, user_id: str, limit: int = 50, current_user: dict = Depends(get_current_user)):
     """Get transaction history for a specific merchant-user link"""
     try:
+        # Verify user is either the merchant or the user in the link
+        user_id_from_token = current_user.get("sub")
+        if user_id_from_token not in [merchant_id, user_id]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to view these transactions"
+            )
+        
         supabase = get_supabase_client()
         
         transactions = supabase.table("transactions").select("*").eq(
@@ -318,9 +338,13 @@ async def get_transactions(merchant_id: str, user_id: str, limit: int = 50):
 
 
 @router.get("/user-transactions/{user_id}", response_model=list)
-async def get_user_transactions(user_id: str, limit: int = 100):
+async def get_user_transactions(user_id: str, limit: int = 100, current_user: dict = Depends(get_current_user)):
     """Get all transaction history for a user across all merchants"""
     try:
+        # Verify user can only access their own transactions
+        from auth_middleware import verify_resource_ownership
+        verify_resource_ownership(current_user, user_id)
+        
         supabase = get_supabase_client()
         
         # Get all transactions for this user

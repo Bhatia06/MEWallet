@@ -139,13 +139,12 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
         title: const Text('My Wallet'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.settings_outlined),
             onPressed: () {
-              if (_tabController.index == 0) {
-                _loadData();
-              } else if (_tabController.index == 1) {
-                _loadTransactions();
-              }
+              // TODO: Navigate to settings/profile page
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Settings coming soon')),
+              );
             },
           ),
           IconButton(
@@ -160,16 +159,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await authProvider.logout();
-              if (mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
-                  (route) => false,
-                );
-              }
-            },
+            onPressed: () => _showLogoutConfirmation(authProvider),
           ),
         ],
         bottom: TabBar(
@@ -189,14 +179,6 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
           _buildNotificationsTab(),
         ],
       ),
-      floatingActionButton: _tabController.index == 0
-          ? FloatingActionButton.extended(
-              onPressed: _showLinkMerchantDialog,
-              icon: const Icon(Icons.link),
-              label: const Text('Link Merchant'),
-              backgroundColor: AppTheme.primaryColor,
-            )
-          : null,
     );
   }
 
@@ -253,74 +235,96 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
                     ),
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _allTransactions.length,
-                  itemBuilder: (context, index) {
-                    final txn = _allTransactions[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 2,
-                      color: isDark ? const Color(0xFF252838) : Colors.white,
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: txn.isCredit
-                              ? AppTheme.successColor.withValues(alpha: 0.2)
-                              : AppTheme.errorColor.withValues(alpha: 0.2),
-                          child: Icon(
-                            txn.isCredit
-                                ? Icons.arrow_downward
-                                : Icons.arrow_upward,
-                            color: txn.isCredit
-                                ? AppTheme.successColor
-                                : AppTheme.errorColor,
-                          ),
-                        ),
-                        title: Text(
-                          txn.storeName ?? txn.merchantId,
-                          style: TextStyle(
+              : Column(
+                  children: [
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _allTransactions.length,
+                        itemBuilder: (context, index) {
+                          final txn = _allTransactions[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
                             color:
-                                isDark ? const Color(0xFFF5F5DC) : Colors.black,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        subtitle: Text(
-                          txn.createdAt != null
-                              ? '${txn.createdAt!.day}/${txn.createdAt!.month}/${txn.createdAt!.year} ${txn.createdAt!.hour}:${txn.createdAt!.minute.toString().padLeft(2, '0')}'
-                              : 'Unknown date',
-                          style: TextStyle(
-                            color:
-                                isDark ? const Color(0xFFE5E5CC) : Colors.grey,
-                          ),
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '${txn.isCredit ? '+' : '-'}₹${txn.amount.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                color: txn.isCredit
+                                isDark ? const Color(0xFF252838) : Colors.white,
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: txn.isCredit
                                     ? AppTheme.successColor
-                                    : AppTheme.errorColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                                        .withValues(alpha: 0.2)
+                                    : AppTheme.errorColor
+                                        .withValues(alpha: 0.2),
+                                child: Icon(
+                                  txn.isCredit
+                                      ? Icons.arrow_downward
+                                      : Icons.arrow_upward,
+                                  color: txn.isCredit
+                                      ? AppTheme.successColor
+                                      : AppTheme.errorColor,
+                                ),
+                              ),
+                              title: Text(
+                                txn.storeName ?? txn.merchantId,
+                                style: TextStyle(
+                                  color: isDark
+                                      ? const Color(0xFFF5F5DC)
+                                      : Colors.black,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Text(
+                                txn.createdAt != null
+                                    ? '${txn.createdAt!.day}/${txn.createdAt!.month}/${txn.createdAt!.year} ${txn.createdAt!.hour}:${txn.createdAt!.minute.toString().padLeft(2, '0')}'
+                                    : 'Unknown date',
+                                style: TextStyle(
+                                  color: isDark
+                                      ? const Color(0xFFE5E5CC)
+                                      : Colors.grey,
+                                ),
+                              ),
+                              trailing: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '${txn.isCredit ? '+' : '-'}₹${txn.amount.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      color: txn.isCredit
+                                          ? AppTheme.successColor
+                                          : AppTheme.errorColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  Text(
+                                    txn.isCredit ? 'Added' : 'Spent',
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? const Color(0xFFE5E5CC)
+                                          : Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            Text(
-                              txn.isCredit ? 'Added' : 'Spent',
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFFE5E5CC)
-                                    : Colors.grey,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: TextButton.icon(
+                        onPressed: _loadTransactions,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Refresh'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.primaryColor,
                         ),
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
     );
   }
@@ -353,70 +357,91 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
                 ),
               ),
             )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: recentTransactions.length,
-              itemBuilder: (context, index) {
-                final txn = recentTransactions[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  elevation: 2,
-                  color: isDark ? const Color(0xFF252838) : Colors.white,
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: txn.isCredit
-                          ? AppTheme.successColor.withValues(alpha: 0.2)
-                          : AppTheme.errorColor.withValues(alpha: 0.2),
-                      child: Icon(
-                        txn.isCredit ? Icons.add : Icons.remove,
-                        color: txn.isCredit
-                            ? AppTheme.successColor
-                            : AppTheme.errorColor,
-                      ),
-                    ),
-                    title: Text(
-                      txn.isCredit ? 'Balance Added' : 'Purchase Made',
-                      style: TextStyle(
-                        color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'At ${txn.storeName ?? txn.merchantId}',
-                          style: TextStyle(
-                            color:
-                                isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+          : Column(
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: recentTransactions.length,
+                    itemBuilder: (context, index) {
+                      final txn = recentTransactions[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        elevation: 2,
+                        color: isDark ? const Color(0xFF252838) : Colors.white,
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: txn.isCredit
+                                ? AppTheme.successColor.withValues(alpha: 0.2)
+                                : AppTheme.errorColor.withValues(alpha: 0.2),
+                            child: Icon(
+                              txn.isCredit ? Icons.add : Icons.remove,
+                              color: txn.isCredit
+                                  ? AppTheme.successColor
+                                  : AppTheme.errorColor,
+                            ),
+                          ),
+                          title: Text(
+                            txn.isCredit ? 'Balance Added' : 'Purchase Made',
+                            style: TextStyle(
+                              color: isDark
+                                  ? const Color(0xFFF5F5DC)
+                                  : Colors.black,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'At ${txn.storeName ?? txn.merchantId}',
+                                style: TextStyle(
+                                  color: isDark
+                                      ? const Color(0xFFE5E5CC)
+                                      : Colors.grey,
+                                ),
+                              ),
+                              Text(
+                                txn.createdAt != null
+                                    ? '${txn.createdAt!.day}/${txn.createdAt!.month}/${txn.createdAt!.year} ${txn.createdAt!.hour}:${txn.createdAt!.minute.toString().padLeft(2, '0')}'
+                                    : 'Unknown date',
+                                style: TextStyle(
+                                  color: isDark
+                                      ? const Color(0xFFE5E5CC)
+                                          .withValues(alpha: 0.7)
+                                      : Colors.grey[600],
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                          trailing: Text(
+                            '${txn.isCredit ? '+' : '-'}₹${txn.amount.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: txn.isCredit
+                                  ? AppTheme.successColor
+                                  : AppTheme.errorColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
-                        Text(
-                          txn.createdAt != null
-                              ? '${txn.createdAt!.day}/${txn.createdAt!.month}/${txn.createdAt!.year} ${txn.createdAt!.hour}:${txn.createdAt!.minute.toString().padLeft(2, '0')}'
-                              : 'Unknown date',
-                          style: TextStyle(
-                            color: isDark
-                                ? const Color(0xFFE5E5CC).withValues(alpha: 0.7)
-                                : Colors.grey[600],
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                    trailing: Text(
-                      '${txn.isCredit ? '+' : '-'}₹${txn.amount.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: txn.isCredit
-                            ? AppTheme.successColor
-                            : AppTheme.errorColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: TextButton.icon(
+                    onPressed: _loadTransactions,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Refresh'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primaryColor,
                     ),
                   ),
-                );
-              },
+                ),
+              ],
             ),
     );
   }
@@ -428,20 +453,68 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
         gradient: AppTheme.primaryGradient,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          const Text('Hello,',
-              style: TextStyle(color: Colors.white70, fontSize: 14)),
-          const SizedBox(height: 4),
-          Text(
-            authProvider.userName ?? 'User',
-            style: const TextStyle(
-                color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Hello,',
+                    style: TextStyle(color: Colors.white70, fontSize: 14)),
+                const SizedBox(height: 4),
+                Text(
+                  authProvider.userName ?? 'User',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text('ID: ${authProvider.userId}',
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 14)),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text('ID: ${authProvider.userId}',
-              style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(width: 16),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _showLinkMerchantDialog,
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(
+                        Icons.link,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Link\nMerchant',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          height: 1.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -563,12 +636,27 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
         else if (walletProvider.links.isEmpty)
           _buildEmptyState()
         else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _filteredLinks.length,
-            itemBuilder: (context, index) =>
-                _buildMerchantCard(_filteredLinks[index]),
+          Column(
+            children: [
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _filteredLinks.length,
+                itemBuilder: (context, index) =>
+                    _buildMerchantCard(_filteredLinks[index]),
+              ),
+              const SizedBox(height: 16),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _loadData,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.primaryColor,
+                  ),
+                ),
+              ),
+            ],
           ),
       ],
     );
@@ -658,7 +746,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
                   child: ElevatedButton.icon(
                     onPressed: () => _showPurchaseDialog(link),
                     icon: const Icon(Icons.shopping_cart, size: 18),
-                    label: const Text('Purchase'),
+                    label: const Text('Pay Merchant'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.successColor,
                       foregroundColor: Colors.white,
@@ -701,23 +789,26 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delink Merchant'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Enter PIN to delink from ${link.storeName}'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pinController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              decoration: const InputDecoration(
-                labelText: 'PIN',
-                border: OutlineInputBorder(),
-                counterText: '',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Enter PIN to delink from ${link.storeName}'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: pinController,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                maxLength: 6,
+                decoration: const InputDecoration(
+                  labelText: 'PIN',
+                  border: OutlineInputBorder(),
+                  counterText: '',
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -820,60 +911,64 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
             color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Request balance from ${link.storeName}',
-              style: TextStyle(
-                color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: amountController,
-              keyboardType: TextInputType.number,
-              style: TextStyle(
-                color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
-              ),
-              decoration: InputDecoration(
-                labelText: 'Amount',
-                prefixText: '₹ ',
-                labelStyle: TextStyle(
-                  color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Request balance from ${link.storeName}',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
                 ),
-                border: const OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: amountController,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Amount',
+                  prefixText: '₹ ',
+                  labelStyle: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+                  ),
+                  border: const OutlineInputBorder(),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pinController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              style: TextStyle(
-                color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
-              ),
-              decoration: InputDecoration(
-                labelText: 'PIN',
-                labelStyle: TextStyle(
-                  color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+              const SizedBox(height: 16),
+              TextField(
+                controller: pinController,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                maxLength: 6,
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
                 ),
-                border: const OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                decoration: InputDecoration(
+                  labelText: 'PIN',
+                  labelStyle: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
                   ),
+                  border: const OutlineInputBorder(),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                    ),
+                  ),
+                  counterText: '',
                 ),
-                counterText: '',
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -951,66 +1046,70 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
       builder: (context) => AlertDialog(
         backgroundColor: isDark ? const Color(0xFF252838) : Colors.white,
         title: Text(
-          'Make Purchase',
+          'Pay to Merchant',
           style: TextStyle(
             color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Current Balance: ₹${link.balance.toStringAsFixed(2)}',
-              style: TextStyle(
-                color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: amountController,
-              keyboardType: TextInputType.number,
-              style: TextStyle(
-                color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
-              ),
-              decoration: InputDecoration(
-                labelText: 'Amount',
-                prefixText: '₹ ',
-                labelStyle: TextStyle(
-                  color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Current Balance: ₹${link.balance.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+                  fontWeight: FontWeight.bold,
                 ),
-                border: const OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: amountController,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Amount',
+                  prefixText: '₹ ',
+                  labelStyle: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+                  ),
+                  border: const OutlineInputBorder(),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pinController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              style: TextStyle(
-                color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
-              ),
-              decoration: InputDecoration(
-                labelText: 'PIN',
-                labelStyle: TextStyle(
-                  color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+              const SizedBox(height: 16),
+              TextField(
+                controller: pinController,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                maxLength: 6,
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
                 ),
-                border: const OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                decoration: InputDecoration(
+                  labelText: 'PIN',
+                  labelStyle: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
                   ),
+                  border: const OutlineInputBorder(),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                    ),
+                  ),
+                  counterText: '',
                 ),
-                counterText: '',
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1023,14 +1122,9 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
               if (amount != null &&
                   amount > 0 &&
                   pinController.text.isNotEmpty) {
-                if (amount > link.balance) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Insufficient balance')),
-                  );
-                } else {
-                  Navigator.pop(context);
-                  _performPurchase(link, amount, pinController.text);
-                }
+                // Allow negative balance - no balance check
+                Navigator.pop(context);
+                _performPurchase(link, amount, pinController.text);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -1041,7 +1135,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.successColor,
             ),
-            child: const Text('Confirm Purchase'),
+            child: const Text('Confirm Payment'),
           ),
         ],
       ),
@@ -1100,58 +1194,62 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
             color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Enter merchant ID and create a PIN for this link',
-              style: TextStyle(
-                color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: merchantIdController,
-              style: TextStyle(
-                color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
-              ),
-              decoration: InputDecoration(
-                labelText: 'Merchant ID',
-                labelStyle: TextStyle(
-                  color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Enter merchant ID and create a PIN for this link',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
                 ),
-                border: const OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: merchantIdController,
+                textInputAction: TextInputAction.next,
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Merchant ID',
+                  labelStyle: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+                  ),
+                  border: const OutlineInputBorder(),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pinController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              style: TextStyle(
-                color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
-              ),
-              decoration: InputDecoration(
-                labelText: 'PIN (4-6 digits)',
-                labelStyle: TextStyle(
-                  color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+              const SizedBox(height: 16),
+              TextField(
+                controller: pinController,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                maxLength: 6,
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
                 ),
-                border: const OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                decoration: InputDecoration(
+                  labelText: 'PIN (4-6 digits)',
+                  labelStyle: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
                   ),
+                  border: const OutlineInputBorder(),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                    ),
+                  ),
+                  counterText: '',
                 ),
-                counterText: '',
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1214,6 +1312,53 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
             content: Text(e.toString()),
             backgroundColor: AppTheme.errorColor,
           ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showLogoutConfirmation(AuthProvider authProvider) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF252838) : Colors.white,
+        title: Text(
+          'Logout Confirmation',
+          style: TextStyle(
+            color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to log out? You will need to enter your user ID and password again to login.',
+          style: TextStyle(
+            color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.errorColor,
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await authProvider.logout();
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (route) => false,
         );
       }
     }

@@ -4,6 +4,41 @@ from datetime import datetime
 import re
 
 
+# OAuth Models
+class GoogleOAuthLogin(BaseModel):
+    """Model for Google OAuth login"""
+    id_token: str
+    user_type: str = Field(..., pattern="^(user|merchant)$")  # Either user or merchant
+
+
+class MerchantOAuthProfileComplete(BaseModel):
+    """Model for completing merchant OAuth profile"""
+    merchant_id: str
+    store_name: str = Field(..., min_length=1, max_length=100)
+    owner_name: str = Field(..., min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, min_length=10, max_length=10)
+    store_address: Optional[str] = Field(None, max_length=200)
+    
+    @validator('phone')
+    def validate_phone(cls, v):
+        if v and not re.match(r'^\d{10}$', v):
+            raise ValueError('Phone must be exactly 10 digits')
+        return v
+
+
+class UserOAuthProfileComplete(BaseModel):
+    """Model for completing user OAuth profile"""
+    user_id: str
+    user_name: str = Field(..., min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, min_length=10, max_length=10)
+    
+    @validator('phone')
+    def validate_phone(cls, v):
+        if v and not re.match(r'^\d{10}$', v):
+            raise ValueError('Phone must be exactly 10 digits')
+        return v
+
+
 # Merchant Models
 class MerchantCreate(BaseModel):
     """Model for creating a new merchant"""
@@ -81,11 +116,11 @@ class AddBalance(BaseModel):
     merchant_id: str
     user_id: str
     amount: float = Field(..., gt=0)
-    pin: str = Field(..., min_length=4, max_length=6)
+    pin: Optional[str] = Field(None, min_length=4, max_length=6)
     
     @validator('pin')
     def validate_pin(cls, v):
-        if not re.match(r'^\d{4,6}$', v):
+        if v and not re.match(r'^\d{4,6}$', v):
             raise ValueError('PIN must be 4-6 digits')
         return v
 

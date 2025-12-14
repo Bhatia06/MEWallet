@@ -164,6 +164,56 @@ class ApiService {
     return AuthResponse.fromJson(response, false);
   }
 
+  // Google OAuth Login
+  Future<AuthResponse> loginWithGoogle({
+    required String idToken,
+    required String userType, // 'user' or 'merchant'
+  }) async {
+    final response = await _makeRequest('POST', '/oauth/google', body: {
+      'id_token': idToken,
+      'user_type': userType,
+    });
+
+    return AuthResponse.fromJson(response, userType == 'merchant');
+  }
+
+  // Complete Merchant OAuth Profile
+  Future<Map<String, dynamic>> completeMerchantProfile({
+    required String merchantId,
+    required String storeName,
+    required String ownerName,
+    String? phone,
+    String? storeAddress,
+  }) async {
+    final response =
+        await _makeRequest('POST', '/oauth/merchant/complete-profile', body: {
+      'merchant_id': merchantId,
+      'store_name': storeName,
+      'owner_name': ownerName,
+      if (phone != null && phone.isNotEmpty) 'phone': phone,
+      if (storeAddress != null && storeAddress.isNotEmpty)
+        'store_address': storeAddress,
+    });
+
+    return response;
+  }
+
+  // Complete User OAuth Profile
+  Future<Map<String, dynamic>> completeUserProfile({
+    required String userId,
+    required String userName,
+    String? phone,
+  }) async {
+    final response =
+        await _makeRequest('POST', '/oauth/user/complete-profile', body: {
+      'user_id': userId,
+      'user_name': userName,
+      if (phone != null && phone.isNotEmpty) 'phone': phone,
+    });
+
+    return response;
+  }
+
   Future<AuthResponse> loginUser({
     required String userId,
     required String password,
@@ -227,14 +277,19 @@ class ApiService {
     required String pin,
     required String token,
   }) async {
+    final body = {
+      'merchant_id': merchantId,
+      'user_id': userId,
+      'amount': amount,
+    };
+
+    // Only include pin if it's not empty (merchant doesn't need PIN)
+    if (pin.isNotEmpty) {
+      body['pin'] = pin;
+    }
+
     return await _makeRequest('POST', '/link/add-balance',
-        body: {
-          'merchant_id': merchantId,
-          'user_id': userId,
-          'amount': amount,
-          'pin': pin,
-        },
-        token: token);
+        body: body, token: token);
   }
 
   Future<Map<String, dynamic>> processPurchase({

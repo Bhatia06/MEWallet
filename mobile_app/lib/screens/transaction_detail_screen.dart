@@ -105,47 +105,31 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<void> _showPinDialog(double amount) async {
-    final pinController = TextEditingController();
-
-    await showDialog(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Enter PIN'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Confirm addition of ₹${amount.toStringAsFixed(2)}'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pinController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              decoration: const InputDecoration(
-                labelText: 'PIN',
-                border: OutlineInputBorder(),
-                counterText: '',
-              ),
-            ),
-          ],
-        ),
+        title: const Text('Confirm Add Balance'),
+        content:
+            Text('Add ₹${amount.toStringAsFixed(2)} to this user\'s balance?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () async {
-              if (pinController.text.isNotEmpty) {
-                Navigator.pop(context);
-                await _addBalance(amount, pinController.text);
-              }
-            },
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.successColor,
+            ),
             child: const Text('Add Balance'),
           ),
         ],
       ),
     );
+
+    if (confirmed == true) {
+      await _addBalance(amount, '');
+    }
   }
 
   Future<void> _addBalance(double amount, String pin) async {
@@ -157,7 +141,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         merchantId: widget.merchantId,
         userId: widget.userId,
         amount: amount,
-        pin: pin,
+        pin: '', // No PIN required for merchant
         token: authProvider.token!,
       );
 

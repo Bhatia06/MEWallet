@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "443131879916",
+    "project_id": "mewallet-481218",
+    "storage_bucket": "mewallet-481218.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:443131879916:android:e5427cd6bbbb4b44b920c9",
+        "android_client_info": {
+          "package_name": "com.example.mewallet"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "443131879916-768lvgvvloctutsp6affs6u73bljggtu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.mewallet",
+            "certificate_hash": "be3deabca647b401d9c9f603f591e9d3e6e74a9b"
+          }
+        },
+        {
+          "client_id": "443131879916-rfdrg8e0fob1f325bbpkl1ppf1n5lcjp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDKHJgej_yDSKr4saT1-LwoGWszCPBYl9U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "443131879916-rfdrg8e0fob1f325bbpkl1ppf1n5lcjp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

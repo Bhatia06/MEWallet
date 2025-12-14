@@ -142,6 +142,9 @@ class AuthResponse {
   final String name;
   final String accessToken;
   final String tokenType;
+  final bool? profileCompleted; // For OAuth users
+  final String? ownerName; // For OAuth merchants
+  final String? googleEmail; // For OAuth users/merchants
 
   AuthResponse({
     required this.message,
@@ -149,6 +152,9 @@ class AuthResponse {
     required this.name,
     required this.accessToken,
     required this.tokenType,
+    this.profileCompleted,
+    this.ownerName,
+    this.googleEmail,
   });
 
   factory AuthResponse.fromJson(Map<String, dynamic> json, bool isMerchant) {
@@ -158,6 +164,9 @@ class AuthResponse {
       name: json[isMerchant ? 'store_name' : 'user_name'] ?? '',
       accessToken: json['access_token'] ?? '',
       tokenType: json['token_type'] ?? 'bearer',
+      profileCompleted: json['profile_completed'],
+      ownerName: json['owner_name'],
+      googleEmail: json['google_email'],
     );
   }
 }

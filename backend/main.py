@@ -1,14 +1,21 @@
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.exceptions import RequestValidationError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from merchant_routes import router as merchant_router
 from user_routes import router as user_router
 from transaction_routes import router as transaction_router
 from balance_request_routes import router as balance_request_router
 from link_request_routes import router as link_request_router
+from oauth_routes import router as oauth_router
 from database import test_connection
 import uvicorn
+
+# Rate limiter setup
+limiter = Limiter(key_func=get_remote_address)
 
 # Create FastAPI app
 app = FastAPI(
@@ -16,6 +23,59 @@ app = FastAPI(
     description="Digital Wallet API for Merchant-User transactions",
     version="1.0.0"
 )
+
+# Add rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Middleware to block browser access to API endpoints
+@app.middleware("http")
+async def block_browser_access(request: Request, call_next):
+    """Block direct browser access to API endpoints"""
+    path = request.url.path
+    
+    # Allow health check and root endpoint
+    if path in ["/", "/health", "/docs", "/redoc", "/openapi.json"]:
+        return await call_next(request)
+    
+    # Check if request is from a browser (has Accept: text/html)
+    accept_header = request.headers.get("accept", "")
+    user_agent = request.headers.get("user-agent", "")
+    
+    # Block if it looks like a browser request
+    if "text/html" in accept_header and "Mozilla" in user_agent:
+        return HTMLResponse(
+            content="""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Access Denied - MEWallet API</title>
+                <style>
+                    body { font-family: Arial, sans-serif; background: #1a1d29; color: #f5f5dc; 
+                           display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                    .container { text-align: center; max-width: 600px; padding: 40px; }
+                    h1 { color: #ff6b6b; font-size: 48px; margin-bottom: 20px; }
+                    p { font-size: 18px; line-height: 1.6; }
+                    .code { background: #252838; padding: 20px; border-radius: 8px; margin-top: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>⛔ Access Denied</h1>
+                    <p>Direct browser access to API endpoints is not allowed.</p>
+                    <p>This API is designed to be accessed programmatically through the MEWallet mobile application.</p>
+                    <div class="code">
+                        <p><strong>Error Code:</strong> 403 Forbidden</p>
+                        <p><strong>Endpoint:</strong> {}</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """.format(path),
+            status_code=403
+        )
+    
+    return await call_next(request)
 
 # CORS middleware
 app.add_middleware(
@@ -53,7 +113,8 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 @app.get("/", tags=["Root"])
-async def root():
+@limiter.limit("10/minute")
+async def root(request: Request):
     """Root endpoint"""
     return {
         "message": "Welcome to MEWallet API",
@@ -63,7 +124,8 @@ async def root():
 
 
 @app.get("/health", tags=["Health"])
-async def health_check():
+@limiter.limit("30/minute")
+async def health_check(request: Request):
     """Health check endpoint"""
     db_status = test_connection()
     return {
@@ -77,22 +139,22 @@ app.include_router(user_router)
 app.include_router(transaction_router)
 app.include_router(balance_request_router)
 app.include_router(link_request_router)
+app.include_router(oauth_router)
 
 @app.on_event("startup")
 async def startup_event():
     """Run on startup"""
-    print("🚀 MEWallet API is starting...")
+    print("MEWallet API starting")
     if test_connection():
-        print("✅ Database connection successful")
+        print("Database connection successful")
     else:
-        print("❌ Database connection failed - check your .env file")
+        print(" Database connection failed. check your .env file")
 
 
-# Shutdown event
 @app.on_event("shutdown")
 async def shutdown_event():
     """Run on shutdown"""
-    print("👋 MEWallet API is shutting down...")
+    print("MEWallet API is shutting down...")
 
 
 if __name__ == "__main__":

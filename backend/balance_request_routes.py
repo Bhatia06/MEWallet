@@ -1,8 +1,13 @@
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends, Request
 from database import get_supabase_client
 from models import BalanceRequest
+from auth_middleware import get_current_user
 from datetime import datetime
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 import asyncio
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/balance-requests", tags=["Balance Requests"])
 
@@ -19,7 +24,8 @@ async def delete_request_after_delay(request_id: int, delay_seconds: int = 10):
 
 
 @router.post("/create", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def create_balance_request(request_data: BalanceRequest):
+@limiter.limit("15/minute")
+async def create_balance_request(request: Request, request_data: BalanceRequest, current_user: dict = Depends(get_current_user)):
     """Create a balance addition request from user"""
     try:
         supabase = get_supabase_client()
@@ -81,9 +87,13 @@ async def create_balance_request(request_data: BalanceRequest):
 
 
 @router.get("/merchant/{merchant_id}", response_model=list)
-async def get_merchant_requests(merchant_id: str):
+async def get_merchant_requests(merchant_id: str, current_user: dict = Depends(get_current_user)):
     """Get all pending balance requests for a merchant"""
     try:
+        # Verify merchant can only access their own requests
+        from auth_middleware import verify_resource_ownership
+        verify_resource_ownership(current_user, merchant_id)
+        
         supabase = get_supabase_client()
         
         result = supabase.table("balance_requests").select(
@@ -116,7 +126,8 @@ async def get_merchant_requests(merchant_id: str):
 
 
 @router.post("/accept/{request_id}", response_model=dict)
-async def accept_balance_request(request_id: int, background_tasks: BackgroundTasks):
+@limiter.limit("20/minute")
+async def accept_balance_request(request: Request, request_id: int, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     """Accept a balance request and add balance to user"""
     try:
         supabase = get_supabase_client()
@@ -193,7 +204,8 @@ async def accept_balance_request(request_id: int, background_tasks: BackgroundTa
 
 
 @router.post("/reject/{request_id}", response_model=dict)
-async def reject_balance_request(request_id: int, background_tasks: BackgroundTasks):
+@limiter.limit("20/minute")
+async def reject_balance_request(request: Request, request_id: int, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     """Reject a balance request"""
     try:
         supabase = get_supabase_client()

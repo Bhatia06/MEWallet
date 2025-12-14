@@ -14,7 +14,7 @@ def get_supabase_client() -> Client:
         try:
             supabase = create_client(
                 settings.SUPABASE_URL,
-                settings.SUPABASE_ANON_KEY
+                settings.SUPABASE_SERVICE_ROLE_KEY
             )
         except Exception as e:
             raise Exception(f"Failed to connect to Supabase: {str(e)}")
