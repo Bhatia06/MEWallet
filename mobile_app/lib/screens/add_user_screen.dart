@@ -76,12 +76,23 @@ class _AddUserScreenState extends State<AddUserScreen> {
               const Icon(Icons.person_add,
                   size: 80, color: AppTheme.primaryColor),
               const SizedBox(height: 30),
-              const Text('Link New User',
-                  style: AppTheme.headingLarge, textAlign: TextAlign.center),
+              Text(
+                'Link New User',
+                style: AppTheme.headingLarge.copyWith(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFFF5F5DC)
+                      : AppTheme.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 10),
-              const Text(
+              Text(
                 'User will set a PIN to make purchases at your store',
-                style: AppTheme.bodyMedium,
+                style: AppTheme.bodyMedium.copyWith(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFFE5E5CC)
+                      : AppTheme.textSecondary,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
@@ -96,8 +107,14 @@ class _AddUserScreenState extends State<AddUserScreen> {
                     v == null || v.isEmpty ? 'User ID is required' : null,
               ),
               const SizedBox(height: 20),
-              const Text('Set PIN for this user:',
-                  style: AppTheme.headingSmall),
+              Text(
+                'Set PIN for this user:',
+                style: AppTheme.headingSmall.copyWith(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFFF5F5DC)
+                      : AppTheme.textPrimary,
+                ),
+              ),
               const SizedBox(height: 10),
               Pinput(
                 controller: _pinController,

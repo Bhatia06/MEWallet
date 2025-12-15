@@ -216,6 +216,7 @@ class AuthProvider with ChangeNotifier {
     required String merchantId,
     required String storeName,
     required String ownerName,
+    required String token,
     String? phone,
     String? storeAddress,
   }) async {
@@ -223,6 +224,10 @@ class AuthProvider with ChangeNotifier {
     _error = null;
 
     try {
+      // Save token first so API calls work
+      await _storageService.saveToken(token);
+      _token = token;
+
       await _apiService.completeMerchantProfile(
         merchantId: merchantId,
         storeName: storeName,
@@ -255,12 +260,17 @@ class AuthProvider with ChangeNotifier {
   Future<void> completeUserProfile({
     required String userId,
     required String userName,
+    required String token,
     String? phone,
   }) async {
     _setLoading(true);
     _error = null;
 
     try {
+      // Save token first so API calls work
+      await _storageService.saveToken(token);
+      _token = token;
+
       await _apiService.completeUserProfile(
         userId: userId,
         userName: userName,

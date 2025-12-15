@@ -11,12 +11,14 @@ class MerchantOAuthProfileScreen extends StatefulWidget {
   final String merchantId;
   final String ownerName;
   final String googleEmail;
+  final String token;
 
   const MerchantOAuthProfileScreen({
     super.key,
     required this.merchantId,
     required this.ownerName,
     required this.googleEmail,
+    required this.token,
   });
 
   @override
@@ -61,6 +63,7 @@ class _MerchantOAuthProfileScreenState
         merchantId: widget.merchantId,
         storeName: _storeNameController.text.trim(),
         ownerName: _ownerNameController.text.trim(),
+        token: widget.token,
         phone: _phoneController.text.trim().isEmpty
             ? null
             : _phoneController.text.trim(),

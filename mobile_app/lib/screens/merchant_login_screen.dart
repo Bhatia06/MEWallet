@@ -201,6 +201,7 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
                                         merchantId: result['id'],
                                         ownerName: result['owner_name'],
                                         googleEmail: result['google_email'],
+                                        token: result['token'],
                                       ),
                                     ),
                                   );

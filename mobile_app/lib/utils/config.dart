@@ -1,6 +1,6 @@
 class AppConfig {
   // API Configuration - UPDATE THESE VALUES
-  static const String baseUrl = 'http://192.168.68.110:8000';
+  static const String baseUrl = 'http://93.127.172.13:8000';
 
   // For Android Emulator use: http://10.0.2.2:8000
   // For iOS Simulator use: http://localhost:8000

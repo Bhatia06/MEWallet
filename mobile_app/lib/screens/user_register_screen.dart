@@ -231,6 +231,7 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
                                         userId: result['id'],
                                         userName: result['name'],
                                         googleEmail: result['google_email'],
+                                        token: result['token'],
                                       ),
                                     ),
                                   );

@@ -161,6 +161,7 @@ class _UserLoginScreenState extends State<UserLoginScreen> {
                                         userId: result['id'],
                                         userName: result['name'],
                                         googleEmail: result['google_email'],
+                                        token: result['token'],
                                       ),
                                     ),
                                   );

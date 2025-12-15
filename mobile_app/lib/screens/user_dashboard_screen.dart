@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:pinput/pinput.dart';
 import '../providers/auth_provider.dart';
 import '../providers/wallet_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/theme.dart';
 import '../models/models.dart';
 import 'home_screen.dart';
+import 'link_merchant_screen.dart';
+import 'request_balance_screen.dart';
+import 'pay_merchant_screen.dart';
 
 class UserDashboardScreen extends StatefulWidget {
   const UserDashboardScreen({super.key});
@@ -485,7 +489,17 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: _showLinkMerchantDialog,
+                onTap: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LinkMerchantScreen(),
+                    ),
+                  );
+                  if (result == true) {
+                    await _loadData();
+                  }
+                },
                 borderRadius: BorderRadius.circular(16),
                 child: Padding(
                   padding:
@@ -728,32 +742,60 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => _showBalanceRequestDialog(link),
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RequestBalanceScreen(link: link),
+                        ),
+                      );
+                      if (result == true) await _loadData();
+                    },
                     icon: const Icon(Icons.add_circle_outline, size: 18),
-                    label: const Text('Request Balance'),
+                    label: const Text(
+                      'Request Balance',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryColor,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 14, horizontal: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
+                      minimumSize: const Size(0, 48),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => _showPurchaseDialog(link),
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PayMerchantScreen(link: link),
+                        ),
+                      );
+                      if (result == true) await _loadData();
+                    },
                     icon: const Icon(Icons.shopping_cart, size: 18),
-                    label: const Text('Pay Merchant'),
+                    label: const Text(
+                      'Pay Merchant',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.successColor,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 14, horizontal: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
+                      minimumSize: const Size(0, 48),
                     ),
                   ),
                 ),
@@ -1011,6 +1053,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
         userId: authProvider.userId!,
         amount: amount,
         pin: pin,
+        token: authProvider.token!,
       );
 
       if (mounted) {
@@ -1224,28 +1267,51 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: pinController,
-                obscureText: true,
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.done,
-                maxLength: 6,
+              const SizedBox(height: 20),
+              Text(
+                'Set PIN (4 digits):',
                 style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                   color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
                 ),
-                decoration: InputDecoration(
-                  labelText: 'PIN (4-6 digits)',
-                  labelStyle: TextStyle(
-                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
+              ),
+              const SizedBox(height: 12),
+              Pinput(
+                controller: pinController,
+                length: 4,
+                obscureText: true,
+                defaultPinTheme: PinTheme(
+                  width: 56,
+                  height: 56,
+                  textStyle: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
                   ),
-                  border: const OutlineInputBorder(),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(
-                      color: isDark ? const Color(0xFF3a3d4a) : Colors.grey,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF3a3d4a) : Colors.white,
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF5a5d6a)
+                          : Colors.grey.shade300,
                     ),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  counterText: '',
+                ),
+                focusedPinTheme: PinTheme(
+                  width: 56,
+                  height: 56,
+                  textStyle: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF3a3d4a) : Colors.white,
+                    border: Border.all(color: AppTheme.primaryColor, width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ],
@@ -1259,7 +1325,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
           ElevatedButton(
             onPressed: () {
               if (merchantIdController.text.isNotEmpty &&
-                  pinController.text.length >= 4) {
+                  pinController.text.length == 4) {
                 Navigator.pop(context);
                 _submitLinkRequest(
                   merchantIdController.text,
@@ -1268,8 +1334,8 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text(
-                        'Please enter valid merchant ID and PIN (4-6 digits)'),
+                    content:
+                        Text('Please enter valid merchant ID and 4-digit PIN'),
                   ),
                 );
               }
@@ -1293,6 +1359,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
         merchantId: merchantId,
         userId: authProvider.userId!,
         pin: pin,
+        token: authProvider.token!,
       );
 
       if (mounted) {

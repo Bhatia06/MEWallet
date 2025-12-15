@@ -206,6 +206,8 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
                                         merchantId: result['id'],
                                         ownerName: result['owner_name'],
                                         googleEmail: result['google_email'],
+                                        token: result['token'],
+                                        
                                       ),
                                     ),
                                   );

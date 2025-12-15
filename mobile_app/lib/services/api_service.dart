@@ -391,19 +391,24 @@ class ApiService {
     required String userId,
     required double amount,
     required String pin,
+    required String token,
   }) async {
-    return await _makeRequest('POST', '/balance-requests/create', body: {
-      'merchant_id': merchantId,
-      'user_id': userId,
-      'amount': amount,
-      'pin': pin,
-    });
+    return await _makeRequest('POST', '/balance-requests/create',
+        token: token,
+        body: {
+          'merchant_id': merchantId,
+          'user_id': userId,
+          'amount': amount,
+          'pin': pin,
+        });
   }
 
-  Future<List<BalanceRequest>> getMerchantRequests(String merchantId) async {
+  Future<List<BalanceRequest>> getMerchantRequests(
+      String merchantId, String token) async {
     try {
-      final response =
-          await _makeRequest('GET', '/balance-requests/merchant/$merchantId');
+      final response = await _makeRequest(
+          'GET', '/balance-requests/merchant/$merchantId',
+          token: token);
       if (response is List) {
         return response
             .map(
@@ -417,12 +422,16 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> acceptBalanceRequest(int requestId) async {
-    return await _makeRequest('POST', '/balance-requests/accept/$requestId');
+  Future<Map<String, dynamic>> acceptBalanceRequest(
+      int requestId, String token) async {
+    return await _makeRequest('POST', '/balance-requests/accept/$requestId',
+        token: token);
   }
 
-  Future<Map<String, dynamic>> rejectBalanceRequest(int requestId) async {
-    return await _makeRequest('POST', '/balance-requests/reject/$requestId');
+  Future<Map<String, dynamic>> rejectBalanceRequest(
+      int requestId, String token) async {
+    return await _makeRequest('POST', '/balance-requests/reject/$requestId',
+        token: token);
   }
 
   // Link Request APIs
@@ -430,18 +439,23 @@ class ApiService {
     required String merchantId,
     required String userId,
     required String pin,
+    required String token,
   }) async {
-    return await _makeRequest('POST', '/link-requests/create', body: {
-      'merchant_id': merchantId,
-      'user_id': userId,
-      'pin': pin,
-    });
+    return await _makeRequest('POST', '/link-requests/create',
+        token: token,
+        body: {
+          'merchant_id': merchantId,
+          'user_id': userId,
+          'pin': pin,
+        });
   }
 
-  Future<List<LinkRequest>> getMerchantLinkRequests(String merchantId) async {
+  Future<List<LinkRequest>> getMerchantLinkRequests(
+      String merchantId, String token) async {
     try {
-      final response =
-          await _makeRequest('GET', '/link-requests/merchant/$merchantId');
+      final response = await _makeRequest(
+          'GET', '/link-requests/merchant/$merchantId',
+          token: token);
       if (response is List) {
         return response
             .map((json) => LinkRequest.fromJson(json as Map<String, dynamic>))
@@ -454,11 +468,15 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> acceptLinkRequest(int requestId) async {
-    return await _makeRequest('POST', '/link-requests/accept/$requestId');
+  Future<Map<String, dynamic>> acceptLinkRequest(
+      int requestId, String token) async {
+    return await _makeRequest('POST', '/link-requests/accept/$requestId',
+        token: token);
   }
 
-  Future<Map<String, dynamic>> rejectLinkRequest(int requestId) async {
-    return await _makeRequest('POST', '/link-requests/reject/$requestId');
+  Future<Map<String, dynamic>> rejectLinkRequest(
+      int requestId, String token) async {
+    return await _makeRequest('POST', '/link-requests/reject/$requestId',
+        token: token);
   }
 }

@@ -5,28 +5,31 @@ import '../providers/auth_provider.dart';
 import '../providers/wallet_provider.dart';
 import '../services/api_service.dart';
 import '../utils/theme.dart';
+import '../models/models.dart';
 
-class LinkMerchantScreen extends StatefulWidget {
-  const LinkMerchantScreen({super.key});
+class RequestBalanceScreen extends StatefulWidget {
+  final MerchantUserLink link;
+
+  const RequestBalanceScreen({super.key, required this.link});
 
   @override
-  State<LinkMerchantScreen> createState() => _LinkMerchantScreenState();
+  State<RequestBalanceScreen> createState() => _RequestBalanceScreenState();
 }
 
-class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
+class _RequestBalanceScreenState extends State<RequestBalanceScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _merchantIdController = TextEditingController();
+  final _amountController = TextEditingController();
   final _pinController = TextEditingController();
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _merchantIdController.dispose();
+    _amountController.dispose();
     _pinController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLinkMerchant() async {
+  Future<void> _handleRequestBalance() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -35,9 +38,11 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
     final walletProvider = context.read<WalletProvider>();
 
     try {
-      await walletProvider.createLink(
-        merchantId: _merchantIdController.text.trim(),
+      final amount = double.parse(_amountController.text.trim());
+      await walletProvider.apiService.createBalanceRequest(
+        merchantId: widget.link.merchantId,
         userId: authProvider.userId!,
+        amount: amount,
         pin: _pinController.text,
         token: authProvider.token!,
       );
@@ -45,7 +50,7 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Merchant linked successfully!'),
+              content: Text('Balance request sent successfully!'),
               backgroundColor: AppTheme.successColor),
         );
         Navigator.pop(context, true);
@@ -57,6 +62,14 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
               content: Text(e.message), backgroundColor: AppTheme.errorColor),
         );
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(e.toString()),
+              backgroundColor: AppTheme.errorColor),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -65,7 +78,7 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Link Merchant')),
+      appBar: AppBar(title: const Text('Request Balance')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -73,10 +86,11 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.link, size: 80, color: AppTheme.primaryColor),
+              const Icon(Icons.add_circle_outline,
+                  size: 80, color: AppTheme.primaryColor),
               const SizedBox(height: 30),
               Text(
-                'Link with Merchant',
+                'Request Balance',
                 style: AppTheme.headingLarge.copyWith(
                   color: Theme.of(context).brightness == Brightness.dark
                       ? const Color(0xFFF5F5DC)
@@ -86,7 +100,7 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Set a PIN to make purchases at this merchant',
+                'Request balance from ${widget.link.storeName ?? widget.link.merchantId}',
                 style: AppTheme.bodyMedium.copyWith(
                   color: Theme.of(context).brightness == Brightness.dark
                       ? const Color(0xFFE5E5CC)
@@ -96,18 +110,26 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
               ),
               const SizedBox(height: 40),
               TextFormField(
-                controller: _merchantIdController,
+                controller: _amountController,
+                keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'Merchant ID',
-                  hintText: 'MRxxxxxx',
-                  prefixIcon: Icon(Icons.store),
+                  labelText: 'Amount',
+                  hintText: '0.00',
+                  prefixText: '₹ ',
+                  prefixIcon: Icon(Icons.currency_rupee),
                 ),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Merchant ID is required' : null,
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Amount is required';
+                  final amount = double.tryParse(v);
+                  if (amount == null || amount <= 0) {
+                    return 'Please enter a valid amount';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 20),
               Text(
-                'Set your PIN:',
+                'Enter your PIN:',
                 style: AppTheme.headingSmall.copyWith(
                   color: Theme.of(context).brightness == Brightness.dark
                       ? const Color(0xFFF5F5DC)
@@ -149,18 +171,19 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Remember this PIN. You\'ll need it for purchases.',
+                'Enter the PIN you set for this merchant.',
                 style: TextStyle(color: AppTheme.warningColor, fontSize: 12),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
               ElevatedButton(
-                onPressed: _isLoading ? null : _handleLinkMerchant,
+                onPressed: _isLoading ? null : _handleRequestBalance,
                 style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
                     padding: const EdgeInsets.symmetric(vertical: 16)),
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Link Merchant',
+                    : const Text('Submit Request',
                         style: TextStyle(fontSize: 18)),
               ),
             ],

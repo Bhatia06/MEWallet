@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from contextlib import asynccontextmanager
 from merchant_routes import router as merchant_router
 from user_routes import router as user_router
 from transaction_routes import router as transaction_router
@@ -17,11 +18,27 @@ import uvicorn
 # Rate limiter setup
 limiter = Limiter(key_func=get_remote_address)
 
+# Lifespan event handler
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("MEWallet API starting")
+    if test_connection():
+        print("Database connection successful")
+    else:
+        print("Database connection failed. Check your .env file")
+    
+    yield
+    
+    # Shutdown
+    print("MEWallet API is shutting down...")
+
 # Create FastAPI app
 app = FastAPI(
     title="MEWallet API",
     description="Digital Wallet API for Merchant-User transactions",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add rate limiter
@@ -140,21 +157,6 @@ app.include_router(transaction_router)
 app.include_router(balance_request_router)
 app.include_router(link_request_router)
 app.include_router(oauth_router)
-
-@app.on_event("startup")
-async def startup_event():
-    """Run on startup"""
-    print("MEWallet API starting")
-    if test_connection():
-        print("Database connection successful")
-    else:
-        print(" Database connection failed. check your .env file")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Run on shutdown"""
-    print("MEWallet API is shutting down...")
 
 
 if __name__ == "__main__":

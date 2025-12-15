@@ -11,12 +11,14 @@ class UserOAuthProfileScreen extends StatefulWidget {
   final String userId;
   final String userName;
   final String googleEmail;
+  final String token;
 
   const UserOAuthProfileScreen({
     super.key,
     required this.userId,
     required this.userName,
     required this.googleEmail,
+    required this.token,
   });
 
   @override
@@ -54,6 +56,7 @@ class _UserOAuthProfileScreenState extends State<UserOAuthProfileScreen> {
       await authProvider.completeUserProfile(
         userId: widget.userId,
         userName: _nameController.text.trim(),
+        token: widget.token,
         phone: _phoneController.text.trim().isEmpty
             ? null
             : _phoneController.text.trim(),

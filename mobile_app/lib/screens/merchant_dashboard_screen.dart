@@ -102,9 +102,9 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     if (authProvider.userId != null && authProvider.token != null) {
       try {
         final balanceReqs = await walletProvider.apiService
-            .getMerchantRequests(authProvider.userId!);
+            .getMerchantRequests(authProvider.userId!, authProvider.token!);
         final linkReqs = await walletProvider.apiService
-            .getMerchantLinkRequests(authProvider.userId!);
+            .getMerchantLinkRequests(authProvider.userId!, authProvider.token!);
         setState(() {
           _balanceRequests = balanceReqs;
           _linkRequests = linkReqs;
@@ -802,10 +802,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   Future<void> _acceptRequest(BalanceRequest request) async {
+    final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
     try {
-      await walletProvider.apiService.acceptBalanceRequest(request.id!);
+      await walletProvider.apiService
+          .acceptBalanceRequest(request.id!, authProvider.token!);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -829,10 +831,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   Future<void> _rejectRequest(BalanceRequest request) async {
+    final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
     try {
-      await walletProvider.apiService.rejectBalanceRequest(request.id!);
+      await walletProvider.apiService
+          .rejectBalanceRequest(request.id!, authProvider.token!);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -856,10 +860,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   Future<void> _acceptLinkRequest(LinkRequest request) async {
+    final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
     try {
-      await walletProvider.apiService.acceptLinkRequest(request.id!);
+      await walletProvider.apiService
+          .acceptLinkRequest(request.id!, authProvider.token!);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -883,10 +889,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   Future<void> _rejectLinkRequest(LinkRequest request) async {
+    final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
     try {
-      await walletProvider.apiService.rejectLinkRequest(request.id!);
+      await walletProvider.apiService
+          .rejectLinkRequest(request.id!, authProvider.token!);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
