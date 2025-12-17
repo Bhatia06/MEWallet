@@ -32,6 +32,105 @@ class _PayMerchantScreenState extends State<PayMerchantScreen> {
   Future<void> _handlePayment() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final amount = double.parse(_amountController.text.trim());
+
+    // Check if payment will result in negative balance
+    final willBeNegative =
+        widget.link.balance < 0 || widget.link.balance < amount;
+    if (willBeNegative) {
+      final balanceAfter = widget.link.balance - amount;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return AlertDialog(
+            backgroundColor: isDark ? const Color(0xFF252838) : Colors.white,
+            title: Row(
+              children: [
+                const Icon(Icons.warning, color: AppTheme.errorColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Negative Balance Warning',
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.link.balance < 0)
+                  Text(
+                    'Your balance is already negative.',
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+                      fontSize: 14,
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  'You will ${widget.link.balance < 0 ? "increase" : "enter"} negative balance of ₹${(-balanceAfter).toStringAsFixed(2)}.',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Current balance: ₹${widget.link.balance.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[600],
+                  ),
+                ),
+                Text(
+                  'Amount to pay: ₹${amount.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[600],
+                  ),
+                ),
+                Text(
+                  'Balance after: ₹${balanceAfter.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: AppTheme.errorColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Are you sure you want to continue?',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[700],
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.errorColor,
+                ),
+                child: const Text('Continue'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirmed != true) return;
+    }
+
     setState(() => _isLoading = true);
 
     final authProvider = context.read<AuthProvider>();
@@ -112,24 +211,34 @@ class _PayMerchantScreenState extends State<PayMerchantScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppTheme.successColor.withValues(alpha: 0.1),
+                  color: (widget.link.balance < 0
+                          ? AppTheme.errorColor
+                          : AppTheme.successColor)
+                      .withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: AppTheme.successColor.withValues(alpha: 0.3),
+                    color: (widget.link.balance < 0
+                            ? AppTheme.errorColor
+                            : AppTheme.successColor)
+                        .withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.account_balance_wallet,
-                        color: AppTheme.successColor),
+                    Icon(Icons.account_balance_wallet,
+                        color: widget.link.balance < 0
+                            ? AppTheme.errorColor
+                            : AppTheme.successColor),
                     const SizedBox(width: 8),
                     Text(
                       'Current Balance: ₹${widget.link.balance.toStringAsFixed(2)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: AppTheme.successColor,
+                        color: widget.link.balance < 0
+                            ? AppTheme.errorColor
+                            : AppTheme.successColor,
                       ),
                     ),
                   ],

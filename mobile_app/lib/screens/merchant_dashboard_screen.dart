@@ -4,10 +4,12 @@ import '../providers/wallet_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/theme.dart';
+import '../utils/auth_error_handler.dart';
 import '../models/models.dart';
 import 'home_screen.dart';
 import 'add_user_screen.dart';
 import 'transaction_detail_screen.dart';
+import 'merchant_deduct_balance_screen.dart';
 
 class MerchantDashboardScreen extends StatefulWidget {
   const MerchantDashboardScreen({super.key});
@@ -18,21 +20,33 @@ class MerchantDashboardScreen extends StatefulWidget {
 }
 
 class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with
+        SingleTickerProviderStateMixin,
+        WidgetsBindingObserver,
+        AuthErrorHandler {
   final TextEditingController _searchController = TextEditingController();
   List<MerchantUserLink> _filteredLinks = [];
   List<BalanceRequest> _balanceRequests = [];
   List<LinkRequest> _linkRequests = [];
+  List<Transaction> _allTransactions = [];
   late TabController _tabController;
+
+  // Caching variables
+  DateTime? _lastTransactionLoad;
+  DateTime? _lastRequestLoad;
+  DateTime? _lastUserLoad;
+  static const _cacheDuration = Duration(minutes: 2);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (_tabController.index == 1) {
-        _loadBalanceRequests();
+        _loadBalanceRequestsIfNeeded();
+      } else if (_tabController.index == 2) {
+        _loadAllTransactionsIfNeeded();
       }
     });
     _searchController.addListener(_filterLinks);
@@ -45,9 +59,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Reload data when app comes to foreground
     if (state == AppLifecycleState.resumed) {
+      _invalidateCaches();
       _loadData();
       if (_tabController.index == 1) {
-        _loadBalanceRequests();
+        _loadBalanceRequestsIfNeeded();
+      } else if (_tabController.index == 2) {
+        _loadAllTransactionsIfNeeded();
       }
     }
   }
@@ -76,23 +93,59 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     });
   }
 
+  // Cache helper methods
+  bool _isCacheValid(DateTime? lastLoad) {
+    if (lastLoad == null) return false;
+    return DateTime.now().difference(lastLoad) < _cacheDuration;
+  }
+
+  void _invalidateCaches() {
+    _lastTransactionLoad = null;
+    _lastRequestLoad = null;
+    _lastUserLoad = null;
+  }
+
   Future<void> _loadData() async {
     final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
     if (authProvider.userId != null && authProvider.token != null) {
-      await walletProvider.fetchLinkedUsers(
-        authProvider.userId!,
-        authProvider.token!,
-      );
-      await _loadBalanceRequests();
-      // Force UI update
-      if (mounted) {
-        setState(() {
-          _filteredLinks = walletProvider.links;
-        });
+      // Check cache validity
+      if (_isCacheValid(_lastUserLoad) && walletProvider.links.isNotEmpty) {
+        return; // Use cached data
       }
+
+      await handleAuthErrors(() async {
+        await walletProvider.fetchLinkedUsers(
+          authProvider.userId!,
+          authProvider.token!,
+        );
+        _lastUserLoad = DateTime.now();
+        await _loadBalanceRequestsIfNeeded();
+        // Force UI update
+        if (mounted) {
+          setState(() {
+            _filteredLinks = walletProvider.links;
+          });
+        }
+      });
     }
+  }
+
+  // Smart loading methods
+  Future<void> _loadBalanceRequestsIfNeeded() async {
+    if (_isCacheValid(_lastRequestLoad) &&
+        (_balanceRequests.isNotEmpty || _linkRequests.isNotEmpty)) {
+      return; // Use cached data
+    }
+    await _loadBalanceRequests();
+  }
+
+  Future<void> _loadAllTransactionsIfNeeded() async {
+    if (_isCacheValid(_lastTransactionLoad) && _allTransactions.isNotEmpty) {
+      return; // Use cached data
+    }
+    await _loadAllTransactions();
   }
 
   Future<void> _loadBalanceRequests() async {
@@ -100,18 +153,40 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     final walletProvider = context.read<WalletProvider>();
 
     if (authProvider.userId != null && authProvider.token != null) {
-      try {
+      await handleAuthErrors(() async {
         final balanceReqs = await walletProvider.apiService
             .getMerchantRequests(authProvider.userId!, authProvider.token!);
         final linkReqs = await walletProvider.apiService
             .getMerchantLinkRequests(authProvider.userId!, authProvider.token!);
-        setState(() {
-          _balanceRequests = balanceReqs;
-          _linkRequests = linkReqs;
-        });
-      } catch (e) {
-        print('Error loading requests: $e');
-      }
+        if (mounted) {
+          setState(() {
+            _balanceRequests = balanceReqs;
+            _linkRequests = linkReqs;
+            _lastRequestLoad = DateTime.now();
+          });
+        }
+      });
+    }
+  }
+
+  Future<void> _loadAllTransactions() async {
+    final authProvider = context.read<AuthProvider>();
+    final walletProvider = context.read<WalletProvider>();
+
+    if (authProvider.userId != null && authProvider.token != null) {
+      await handleAuthErrors(() async {
+        final transactions =
+            await walletProvider.apiService.getMerchantTransactions(
+          merchantId: authProvider.userId!,
+          token: authProvider.token!,
+        );
+        if (mounted) {
+          setState(() {
+            _allTransactions = transactions;
+            _lastTransactionLoad = DateTime.now();
+          });
+        }
+      });
     }
   }
 
@@ -120,92 +195,137 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     final authProvider = context.watch<AuthProvider>();
     final walletProvider = context.watch<WalletProvider>();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              // TODO: Navigate to settings/profile page
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Settings coming soon')),
-              );
-            },
-          ),
-          IconButton(
-            icon: Icon(
-              Theme.of(context).brightness == Brightness.dark
-                  ? Icons.light_mode
-                  : Icons.dark_mode,
-            ),
-            onPressed: () {
-              context.read<ThemeProvider>().toggleTheme();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _showLogoutConfirmation(authProvider),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _buildHeaderCard(authProvider),
-          TabBar(
-            controller: _tabController,
-            labelColor: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFFF5F5DC)
-                : AppTheme.primaryColor,
-            unselectedLabelColor:
-                Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFFE5E5CC)
-                    : Colors.grey,
-            indicatorColor: AppTheme.primaryColor,
-            tabs: const [
-              Tab(text: 'Users', icon: Icon(Icons.people)),
-              Tab(text: 'Requests', icon: Icon(Icons.request_page)),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+
+        // Show exit confirmation dialog
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit App'),
+            content: const Text('Do you want to exit the app?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.errorColor,
+                ),
+                child: const Text('Exit'),
+              ),
             ],
           ),
-          Expanded(
-            child: TabBarView(
+        );
+
+        if (shouldExit == true && context.mounted) {
+          // Exit the app
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: const Text('Dashboard'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Settings coming soon')),
+                );
+              },
+            ),
+            IconButton(
+              icon: Icon(
+                Theme.of(context).brightness == Brightness.dark
+                    ? Icons.light_mode
+                    : Icons.dark_mode,
+              ),
+              onPressed: () {
+                context.read<ThemeProvider>().toggleTheme();
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: () => _showLogoutConfirmation(authProvider),
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            _buildHeaderCard(authProvider),
+            TabBar(
               controller: _tabController,
-              children: [
-                RefreshIndicator(
-                  onRefresh: _loadData,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildStatsCard(walletProvider.links),
-                        const SizedBox(height: 24),
-                        _buildSearchBar(),
-                        const SizedBox(height: 16),
-                        _buildLinkedUsersSection(walletProvider),
-                      ],
-                    ),
-                  ),
-                ),
-                RefreshIndicator(
-                  onRefresh: _loadBalanceRequests,
-                  child: _buildRequestsTab(),
-                ),
+              labelColor: Theme.of(context).brightness == Brightness.dark
+                  ? const Color(0xFFF5F5DC)
+                  : AppTheme.primaryColor,
+              unselectedLabelColor:
+                  Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFFE5E5CC)
+                      : Colors.grey,
+              indicatorColor: AppTheme.primaryColor,
+              tabs: const [
+                Tab(text: 'Users', icon: Icon(Icons.people)),
+                Tab(text: 'Requests', icon: Icon(Icons.request_page)),
+                Tab(text: 'Transactions', icon: Icon(Icons.receipt_long)),
               ],
             ),
-          ),
-        ],
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  RefreshIndicator(
+                    onRefresh: _loadData,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildStatsCard(walletProvider.links),
+                          const SizedBox(height: 12),
+                          _buildSearchBar(),
+                          const SizedBox(height: 10),
+                          _buildLinkedUsersSection(walletProvider),
+                        ],
+                      ),
+                    ),
+                  ),
+                  RefreshIndicator(
+                    onRefresh: () async {
+                      _lastRequestLoad = null;
+                      await _loadBalanceRequests();
+                    },
+                    child: _buildRequestsTab(),
+                  ),
+                  RefreshIndicator(
+                    onRefresh: () async {
+                      _lastTransactionLoad = null;
+                      await _loadAllTransactions();
+                    },
+                    child: _buildTransactionsTab(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildHeaderCard(AuthProvider authProvider) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         gradient: AppTheme.primaryGradient,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
@@ -215,30 +335,30 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
               children: [
                 const Text(
                   'Welcome,',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   authProvider.userName ?? 'Merchant',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 24,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Text(
                   'ID: ${authProvider.userId}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 10),
           Container(
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Material(
               color: Colors.transparent,
@@ -250,25 +370,25 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                   );
                   if (result == true) _loadData();
                 },
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(12),
                 child: Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: const [
                       Icon(
                         Icons.person_add,
                         color: Colors.white,
-                        size: 32,
+                        size: 24,
                       ),
-                      SizedBox(height: 6),
+                      SizedBox(height: 3),
                       Text(
                         'Add User',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 12,
+                          fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -307,10 +427,10 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF252838) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.grey.withValues(alpha: 0.1),
@@ -335,12 +455,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
-        Icon(icon, color: AppTheme.primaryColor, size: 32),
-        const SizedBox(height: 8),
+        Icon(icon, color: AppTheme.primaryColor, size: 20),
+        const SizedBox(height: 4),
         Text(
           value,
           style: TextStyle(
-            fontSize: 20,
+            fontSize: 15,
             fontWeight: FontWeight.bold,
             color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
           ),
@@ -348,7 +468,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         Text(
           label,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 10,
             color: isDark ? const Color(0xFFE5E5CC) : Colors.grey,
           ),
         ),
@@ -429,91 +549,87 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   Widget _buildUserCard(MerchantUserLink link) {
+    final isNegative = link.balance < 0;
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
-              child: Text(
-                link.userName?.substring(0, 1).toUpperCase() ?? 'U',
-                style: const TextStyle(
-                    color: AppTheme.primaryColor, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    link.userName ?? 'Unknown User',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFFF5F5DC)
-                          : Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'ID: ${link.userId}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFFE5E5CC)
-                          : Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '₹${link.balance.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 15,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isNegative
+            ? const BorderSide(color: AppTheme.errorColor, width: 2)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        onTap: () => _showUserActionsBottomSheet(link),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
+                child: Text(
+                  link.userName?.substring(0, 1).toUpperCase() ?? 'U',
+                  style: const TextStyle(
+                      color: AppTheme.primaryColor,
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.successColor,
-                    ),
-                  ),
-                ],
+                      fontSize: 13),
+                ),
               ),
-            ),
-            SizedBox(
-              width: 80,
-              height: 36,
-              child: ElevatedButton(
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TransactionDetailScreen(
-                        merchantId: link.merchantId,
-                        userId: link.userId,
-                        name: link.userName ?? 'User',
-                        balance: link.balance,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      link.userName ?? 'Unknown User',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFFF5F5DC)
+                            : Colors.black,
                       ),
                     ),
-                  );
-                  // Reload data when returning from transaction screen
-                  _loadData();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.successColor,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text(
-                  'Add Balance',
-                  style: TextStyle(fontSize: 11, color: Colors.white),
+                    const SizedBox(height: 2),
+                    Text(
+                      'ID: ${link.userId}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFFE5E5CC)
+                            : Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '₹${link.balance.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: link.balance < 0
+                            ? AppTheme.errorColor
+                            : AppTheme.successColor,
+                      ),
+                    ),
+                    if (link.balance < 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Owes you ₹${(-link.balance).toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.errorColor,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+            ],
+          ),
         ),
       ),
     );
@@ -816,6 +932,9 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
             backgroundColor: AppTheme.successColor,
           ),
         );
+        _lastRequestLoad = null;
+        _lastUserLoad = null;
+        _lastTransactionLoad = null;
         _loadData();
       }
     } catch (e) {
@@ -845,6 +964,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
             backgroundColor: AppTheme.errorColor,
           ),
         );
+        _lastRequestLoad = null;
         _loadData();
       }
     } catch (e) {
@@ -874,6 +994,8 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
             backgroundColor: AppTheme.successColor,
           ),
         );
+        _lastRequestLoad = null;
+        _lastUserLoad = null;
         _loadData();
       }
     } catch (e) {
@@ -903,6 +1025,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
             backgroundColor: AppTheme.errorColor,
           ),
         );
+        _lastRequestLoad = null;
         _loadData();
       }
     } catch (e) {
@@ -915,6 +1038,421 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         );
       }
     }
+  }
+
+  Widget _buildTransactionsTab() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (_allTransactions.isEmpty) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.receipt_long_outlined,
+                    size: 80, color: Colors.grey[300]),
+                const SizedBox(height: 16),
+                Text(
+                  'No transactions yet',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'All your transactions will appear here',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[500],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _allTransactions.length,
+      itemBuilder: (context, index) {
+        final transaction = _allTransactions[index];
+        return _buildTransactionCard(transaction, isDark);
+      },
+    );
+  }
+
+  Widget _buildTransactionCard(Transaction transaction, bool isDark) {
+    final isCredit = transaction.transactionType == 'add_balance' ||
+        transaction.transactionType == 'credit';
+    final amount = transaction.amount;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      color: isDark ? const Color(0xFF252838) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: (isCredit ? AppTheme.successColor : AppTheme.errorColor)
+                    .withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                isCredit ? Icons.add : Icons.remove,
+                color: isCredit ? AppTheme.successColor : AppTheme.errorColor,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    transaction.userName ?? 'Unknown User',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isCredit ? 'Balance Added' : 'Purchase',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color:
+                          isDark ? const Color(0xFFE5E5CC) : Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatDate(transaction.createdAt),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color:
+                          isDark ? const Color(0xFFE5E5CC) : Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              '${isCredit ? '+' : '-'}₹${amount.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: isCredit ? AppTheme.successColor : AppTheme.errorColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return '';
+    try {
+      final now = DateTime.now();
+      final difference = now.difference(date);
+
+      if (difference.inDays == 0) {
+        if (difference.inHours == 0) {
+          if (difference.inMinutes == 0) {
+            return 'Just now';
+          }
+          return '${difference.inMinutes}m ago';
+        }
+        return '${difference.inHours}h ago';
+      } else if (difference.inDays == 1) {
+        return 'Yesterday';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d ago';
+      } else {
+        return '${date.day}/${date.month}/${date.year}';
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
+  void _showUserActionsBottomSheet(MerchantUserLink link) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF252838)
+          : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                link.userName ?? 'User',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFFF5F5DC)
+                      : Colors.black,
+                ),
+              ),
+              Text(
+                'Balance: ₹${link.balance.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFFE5E5CC)
+                      : Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MerchantDeductBalanceScreen(link: link),
+                    ),
+                  );
+                  if (result == true) {
+                    _loadData();
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                child:
+                    const Text('Request Pay', style: TextStyle(fontSize: 16)),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showAddBalanceDialog(link);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.successColor,
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                child:
+                    const Text('Add Balance', style: TextStyle(fontSize: 16)),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TransactionDetailScreen(
+                        merchantId: link.merchantId,
+                        userId: link.userId,
+                        name: link.userName ?? 'User',
+                        balance: link.balance,
+                      ),
+                    ),
+                  );
+                  _loadData();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                child:
+                    const Text('Transactions', style: TextStyle(fontSize: 16)),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAddBalanceDialog(MerchantUserLink link) {
+    final amountController = TextEditingController();
+
+    // Capture context references before showing dialogs
+    final authProvider = context.read<AuthProvider>();
+    final walletProvider = context.read<WalletProvider>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF252838) : Colors.white,
+          title: Text(
+            'Add Balance',
+            style: TextStyle(
+              color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Add balance for ${link.userName}',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: amountController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Amount',
+                  prefixText: '₹ ',
+                  border: OutlineInputBorder(),
+                ),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final amount = double.tryParse(amountController.text);
+                if (amount == null || amount <= 0) {
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a valid amount'),
+                      backgroundColor: AppTheme.errorColor,
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.pop(dialogContext);
+
+                // Show confirmation dialog
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (confirmContext) {
+                    final isDark =
+                        Theme.of(context).brightness == Brightness.dark;
+                    return AlertDialog(
+                      backgroundColor:
+                          isDark ? const Color(0xFF252838) : Colors.white,
+                      title: Text(
+                        'Confirm Add Balance',
+                        style: TextStyle(
+                          color:
+                              isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                        ),
+                      ),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'You are going to add ₹${amount.toStringAsFixed(2)} to ${link.userName}.',
+                            style: TextStyle(
+                              color: isDark
+                                  ? const Color(0xFFE5E5CC)
+                                  : Colors.black87,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Please confirm the amount and the name before proceeding.',
+                            style: TextStyle(
+                              color:
+                                  isDark ? Colors.grey[400] : Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(confirmContext, false),
+                          child: const Text('Go back'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(confirmContext, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.successColor,
+                          ),
+                          child: const Text('Confirm'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+
+                if (confirmed != true) return;
+
+                try {
+                  await walletProvider.apiService.addBalance(
+                    merchantId: link.merchantId,
+                    userId: link.userId,
+                    amount: amount,
+                    token: authProvider.token!,
+                  );
+
+                  _lastUserLoad = null;
+                  _lastTransactionLoad = null;
+                  await _loadData();
+
+                  if (mounted) {
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            '₹${amount.toStringAsFixed(2)} added successfully to ${link.userName}!'),
+                        backgroundColor: AppTheme.successColor,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text(e.toString()),
+                        backgroundColor: AppTheme.errorColor,
+                      ),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.successColor,
+              ),
+              child: const Text('Next'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showLogoutConfirmation(AuthProvider authProvider) async {

@@ -20,6 +20,16 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+def hash_pin(pin: str) -> str:
+    """Hash a 4-digit PIN using bcrypt (same as password)"""
+    return pwd_context.hash(pin)
+
+
+def verify_pin(plain_pin: str, hashed_pin: str) -> bool:
+    """Verify a PIN against its hash"""
+    return pwd_context.verify(plain_pin, hashed_pin)
+
+
 def generate_merchant_id() -> str:
     """Generate a unique 6-digit merchant ID starting with MR"""
     random_bytes = secrets.token_bytes(3)

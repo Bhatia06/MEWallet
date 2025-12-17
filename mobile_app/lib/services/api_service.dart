@@ -6,8 +6,10 @@ import '../models/models.dart';
 class ApiException implements Exception {
   final String message;
   final int? statusCode;
+  final bool isUnauthorized;
 
-  ApiException(this.message, [this.statusCode]);
+  ApiException(this.message, [this.statusCode])
+      : isUnauthorized = statusCode == 401;
 
   @override
   String toString() => message;
@@ -182,18 +184,21 @@ class ApiService {
     required String merchantId,
     required String storeName,
     required String ownerName,
+    required String token,
     String? phone,
     String? storeAddress,
   }) async {
     final response =
-        await _makeRequest('POST', '/oauth/merchant/complete-profile', body: {
-      'merchant_id': merchantId,
-      'store_name': storeName,
-      'owner_name': ownerName,
-      if (phone != null && phone.isNotEmpty) 'phone': phone,
-      if (storeAddress != null && storeAddress.isNotEmpty)
-        'store_address': storeAddress,
-    });
+        await _makeRequest('POST', '/oauth/merchant/complete-profile',
+            body: {
+              'merchant_id': merchantId,
+              'store_name': storeName,
+              'owner_name': ownerName,
+              if (phone != null && phone.isNotEmpty) 'phone': phone,
+              if (storeAddress != null && storeAddress.isNotEmpty)
+                'store_address': storeAddress,
+            },
+            token: token);
 
     return response;
   }
@@ -202,14 +207,34 @@ class ApiService {
   Future<Map<String, dynamic>> completeUserProfile({
     required String userId,
     required String userName,
+    required String token,
     String? phone,
   }) async {
-    final response =
-        await _makeRequest('POST', '/oauth/user/complete-profile', body: {
-      'user_id': userId,
-      'user_name': userName,
-      if (phone != null && phone.isNotEmpty) 'phone': phone,
-    });
+    final response = await _makeRequest('POST', '/oauth/user/complete-profile',
+        body: {
+          'user_id': userId,
+          'user_name': userName,
+          if (phone != null && phone.isNotEmpty) 'phone': phone,
+        },
+        token: token);
+
+    return response;
+  }
+
+  // Complete User Profile with Phone and PIN (for existing users)
+  Future<Map<String, dynamic>> completeUserProfileWithPin({
+    required String userId,
+    required String phone,
+    required String pin,
+    required String token,
+  }) async {
+    final response = await _makeRequest('POST', '/user/complete-profile',
+        body: {
+          'user_id': userId,
+          'phone': phone,
+          'pin': pin,
+        },
+        token: token);
 
     return response;
   }
@@ -274,7 +299,7 @@ class ApiService {
     required String merchantId,
     required String userId,
     required double amount,
-    required String pin,
+    String? pin,
     required String token,
   }) async {
     final body = {
@@ -284,7 +309,7 @@ class ApiService {
     };
 
     // Only include pin if it's not empty (merchant doesn't need PIN)
-    if (pin.isNotEmpty) {
+    if (pin != null && pin.isNotEmpty) {
       body['pin'] = pin;
     }
 
@@ -364,6 +389,25 @@ class ApiService {
     final response = await _makeRequest(
       'GET',
       '/link/user-transactions/$userId?limit=$limit',
+      token: token,
+    );
+
+    if (response is List) {
+      return response
+          .map((e) => Transaction.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<List<Transaction>> getMerchantTransactions({
+    required String merchantId,
+    required String token,
+    int limit = 100,
+  }) async {
+    final response = await _makeRequest(
+      'GET',
+      '/link/merchant-transactions/$merchantId?limit=$limit',
       token: token,
     );
 
@@ -477,6 +521,84 @@ class ApiService {
   Future<Map<String, dynamic>> rejectLinkRequest(
       int requestId, String token) async {
     return await _makeRequest('POST', '/link-requests/reject/$requestId',
+        token: token);
+  }
+
+  // Pay Request APIs
+  Future<Map<String, dynamic>> createPayRequest({
+    required String merchantId,
+    required String userId,
+    required double amount,
+    String? description,
+    required String token,
+  }) async {
+    return await _makeRequest(
+      'POST',
+      '/pay-requests/create',
+      body: {
+        'merchant_id': merchantId,
+        'user_id': userId,
+        'amount': amount,
+        if (description != null) 'description': description,
+      },
+      token: token,
+    );
+  }
+
+  Future<List<PayRequest>> getUserPayRequests(
+      String userId, String token) async {
+    try {
+      final response =
+          await _makeRequest('GET', '/pay-requests/user/$userId', token: token);
+      if (response is List) {
+        return response
+            .map((json) => PayRequest.fromJson(json as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print('Error getting user pay requests: $e');
+      return [];
+    }
+  }
+
+  Future<List<PayRequest>> getMerchantPayRequests(
+      String merchantId, String token) async {
+    try {
+      final response = await _makeRequest(
+          'GET', '/pay-requests/merchant/$merchantId',
+          token: token);
+      if (response is List) {
+        return response
+            .map((json) => PayRequest.fromJson(json as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print('Error getting merchant pay requests: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> acceptPayRequest({
+    required int requestId,
+    required String pin,
+    required String token,
+  }) async {
+    return await _makeRequest(
+      'POST',
+      '/pay-requests/accept',
+      body: {
+        'request_id': requestId,
+        'pin': pin,
+      },
+      token: token,
+    );
+  }
+
+  Future<Map<String, dynamic>> rejectPayRequest(
+      int requestId, String token) async {
+    return await _makeRequest('POST', '/pay-requests/reject/$requestId',
         token: token);
   }
 }

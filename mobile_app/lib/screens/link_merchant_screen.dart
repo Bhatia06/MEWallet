@@ -86,7 +86,7 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Set a PIN to make purchases at this merchant',
+                'Enter your PIN to make purchases at this merchant',
                 style: AppTheme.bodyMedium.copyWith(
                   color: Theme.of(context).brightness == Brightness.dark
                       ? const Color(0xFFE5E5CC)
@@ -107,7 +107,7 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
               ),
               const SizedBox(height: 20),
               Text(
-                'Set your PIN:',
+                'Enter your PIN:',
                 style: AppTheme.headingSmall.copyWith(
                   color: Theme.of(context).brightness == Brightness.dark
                       ? const Color(0xFFF5F5DC)
@@ -148,11 +148,6 @@ class _LinkMerchantScreenState extends State<LinkMerchantScreen> {
                 },
               ),
               const SizedBox(height: 10),
-              const Text(
-                'Remember this PIN. You\'ll need it for purchases.',
-                style: TextStyle(color: AppTheme.warningColor, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
               const SizedBox(height: 40),
               ElevatedButton(
                 onPressed: _isLoading ? null : _handleLinkMerchant,

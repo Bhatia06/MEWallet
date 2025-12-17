@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from database import get_supabase_client
 from models import MerchantUserLink, AddBalance, ProcessTransaction, TransactionResponse
-from utils import hash_password, verify_password
+from utils import hash_password, verify_password, verify_pin
 from auth_middleware import get_current_user
 from datetime import datetime, timezone, timedelta
 from slowapi import Limiter
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/link", tags=["Merchant-User Link"])
 @router.post("/create", response_model=dict, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def create_link(request: Request, link_data: MerchantUserLink, current_user: dict = Depends(get_current_user)):
-    """Create a link between merchant and user with PIN"""
+    """Create a link between merchant and user by verifying user's PIN"""
     try:
         supabase = get_supabase_client()
         
@@ -27,12 +27,34 @@ async def create_link(request: Request, link_data: MerchantUserLink, current_use
                 detail="Merchant not found"
             )
         
-        # Verify user exists
+        # Verify user exists and get PIN
         user = supabase.table("users").select("*").eq("id", link_data.user_id).execute()
         if not user.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
+            )
+        
+        user_data = user.data[0]
+        
+        # Verify user has completed profile
+        if not user_data.get("profile_completed", False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User must complete profile before linking merchant"
+            )
+        
+        # Verify user's PIN from users table
+        if not user_data.get("pin"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User PIN not found. Please complete your profile first."
+            )
+        
+        if not verify_pin(link_data.pin, user_data["pin"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid PIN"
             )
         
         # Check if link already exists
@@ -46,14 +68,10 @@ async def create_link(request: Request, link_data: MerchantUserLink, current_use
                 detail="Link already exists between this merchant and user"
             )
         
-        # Hash PIN
-        hashed_pin = hash_password(link_data.pin)
-        
-        # Create link
+        # Create link without storing PIN (PIN is in users table)
         result = supabase.table("merchant_user_links").insert({
             "merchant_id": link_data.merchant_id,
             "user_id": link_data.user_id,
-            "pin": hashed_pin,
             "balance": 0.0
         }).execute()
         
@@ -83,7 +101,7 @@ async def create_link(request: Request, link_data: MerchantUserLink, current_use
 @router.post("/delink", response_model=dict)
 @limiter.limit("10/minute")
 async def delink_merchant(request: Request, link_data: ProcessTransaction, current_user: dict = Depends(get_current_user)):
-    """Delink merchant and user with PIN verification"""
+    """Delink merchant and user with PIN verification from users table"""
     try:
         supabase = get_supabase_client()
         
@@ -100,8 +118,16 @@ async def delink_merchant(request: Request, link_data: ProcessTransaction, curre
         
         link_record = link.data[0]
         
-        # Verify PIN
-        if not verify_password(link_data.pin, link_record["pin"]):
+        # Get user's PIN from users table
+        user = supabase.table("users").select("pin").eq("id", link_data.user_id).execute()
+        if not user.data or not user.data[0].get("pin"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User PIN not found"
+            )
+        
+        # Verify PIN from users table
+        if not verify_pin(link_data.pin, user.data[0]["pin"]):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid PIN"
@@ -156,7 +182,7 @@ async def add_balance(request: Request, balance_data: AddBalance, current_user: 
         current_balance = link_data["balance"]
         new_balance = current_balance + balance_data.amount
         
-        # Update balance
+
         update_result = supabase.table("merchant_user_links").update({
             "balance": new_balance
         }).eq("id", link_data["id"]).execute()
@@ -167,7 +193,6 @@ async def add_balance(request: Request, balance_data: AddBalance, current_user: 
                 detail="Failed to update balance"
             )
         
-        # Record transaction with IST timestamp
         ist = timezone(timedelta(hours=5, minutes=30))
         current_time_ist = datetime.now(ist).isoformat()
         transaction = supabase.table("transactions").insert({
@@ -200,7 +225,7 @@ async def add_balance(request: Request, balance_data: AddBalance, current_user: 
 @router.post("/purchase", response_model=dict)
 @limiter.limit("30/minute")
 async def process_purchase(request: Request, transaction_data: ProcessTransaction, current_user: dict = Depends(get_current_user)):
-    """Process a purchase transaction with PIN validation"""
+    """Process a purchase transaction with PIN validation from users table"""
     try:
         supabase = get_supabase_client()
         
@@ -217,8 +242,16 @@ async def process_purchase(request: Request, transaction_data: ProcessTransactio
         
         link_data = link.data[0]
         
-        # Verify PIN
-        if not verify_password(transaction_data.pin, link_data["pin"]):
+        # Get user's PIN from users table
+        user = supabase.table("users").select("pin").eq("id", transaction_data.user_id).execute()
+        if not user.data or not user.data[0].get("pin"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User PIN not found"
+            )
+        
+        # Verify PIN from users table
+        if not verify_pin(transaction_data.pin, user.data[0]["pin"]):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid PIN"
@@ -363,6 +396,42 @@ async def get_user_transactions(user_id: str, limit: int = 100, current_user: di
                 txn["store_name"] = merchant.data[0]["store_name"]
             else:
                 txn["store_name"] = "Unknown Merchant"
+        
+        return transactions
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred: {str(e)}"
+        )
+
+
+@router.get("/merchant-transactions/{merchant_id}", response_model=list)
+async def get_merchant_transactions(merchant_id: str, limit: int = 100, current_user: dict = Depends(get_current_user)):
+    """Get all transaction history for a merchant across all users"""
+    try:
+        # Verify merchant can only access their own transactions
+        from auth_middleware import verify_resource_ownership
+        verify_resource_ownership(current_user, merchant_id)
+        
+        supabase = get_supabase_client()
+        
+        # Get all transactions for this merchant
+        transactions_response = supabase.table("transactions").select("*").eq(
+            "merchant_id", merchant_id
+        ).order("created_at", desc=True).limit(limit).execute()
+        
+        transactions = transactions_response.data if transactions_response.data else []
+        
+        # Enrich transactions with user names
+        for txn in transactions:
+            user = supabase.table("users").select("user_name").eq(
+                "id", txn["user_id"]
+            ).execute()
+            if user.data:
+                txn["user_name"] = user.data[0]["user_name"]
+            else:
+                txn["user_name"] = "Unknown User"
         
         return transactions
         

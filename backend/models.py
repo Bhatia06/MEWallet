@@ -69,9 +69,42 @@ class MerchantResponse(BaseModel):
 
 # User Models
 class UserCreate(BaseModel):
-    """Model for creating a new user"""
+    """Model for creating a new user - Now requires phone and PIN"""
     user_name: str = Field(..., min_length=1, max_length=100)
     user_passw: str = Field(..., min_length=6, max_length=72)
+    phone: str = Field(..., min_length=10, max_length=10)
+    pin: str = Field(..., min_length=4, max_length=4)
+    
+    @validator('phone')
+    def validate_phone(cls, v):
+        if not re.match(r'^\d{10}$', v):
+            raise ValueError('Phone must be exactly 10 digits')
+        return v
+    
+    @validator('pin')
+    def validate_pin(cls, v):
+        if not re.match(r'^\d{4}$', v):
+            raise ValueError('PIN must be exactly 4 digits')
+        return v
+
+
+class UserCompleteProfile(BaseModel):
+    """Model for completing user profile (for existing users without phone/PIN)"""
+    user_id: str
+    phone: str = Field(..., min_length=10, max_length=10)
+    pin: str = Field(..., min_length=4, max_length=4)
+    
+    @validator('phone')
+    def validate_phone(cls, v):
+        if not re.match(r'^\d{10}$', v):
+            raise ValueError('Phone must be exactly 10 digits')
+        return v
+    
+    @validator('pin')
+    def validate_pin(cls, v):
+        if not re.match(r'^\d{4}$', v):
+            raise ValueError('PIN must be exactly 4 digits')
+        return v
 
 
 class UserLogin(BaseModel):
@@ -89,15 +122,15 @@ class UserResponse(BaseModel):
 
 # Merchant-User Link Models
 class MerchantUserLink(BaseModel):
-    """Model for linking merchant and user"""
+    """Model for linking merchant and user - PIN verification only (PIN stored in users table)"""
     merchant_id: str
     user_id: str
-    pin: str = Field(..., min_length=4, max_length=6)
+    pin: str = Field(..., min_length=4, max_length=4)
     
     @validator('pin')
     def validate_pin(cls, v):
-        if not re.match(r'^\d{4,6}$', v):
-            raise ValueError('PIN must be 4-6 digits')
+        if not re.match(r'^\d{4}$', v):
+            raise ValueError('PIN must be exactly 4 digits')
         return v
 
 

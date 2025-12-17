@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../models/models.dart';
 
 class AuthProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -37,6 +38,17 @@ class AuthProvider with ChangeNotifier {
       _userType = _storageService.getUserType();
       _token = _storageService.getToken();
     }
+    notifyListeners();
+  }
+
+  Future<void> logout() async {
+    await _storageService.clearAll();
+    _isAuthenticated = false;
+    _userId = null;
+    _userName = null;
+    _userType = null;
+    _token = null;
+    _error = null;
     notifyListeners();
   }
 
@@ -232,6 +244,7 @@ class AuthProvider with ChangeNotifier {
         merchantId: merchantId,
         storeName: storeName,
         ownerName: ownerName,
+        token: token,
         phone: phone,
         storeAddress: storeAddress,
       );
@@ -274,6 +287,7 @@ class AuthProvider with ChangeNotifier {
       await _apiService.completeUserProfile(
         userId: userId,
         userName: userName,
+        token: token,
         phone: phone,
       );
 
@@ -297,7 +311,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loginUser({
+  Future<AuthResponse> loginUser({
     required String userId,
     required String password,
   }) async {
@@ -319,6 +333,8 @@ class AuthProvider with ChangeNotifier {
 
       _isAuthenticated = true;
       notifyListeners();
+
+      return response;
     } catch (e) {
       _error = e.toString();
       notifyListeners();
@@ -326,16 +342,6 @@ class AuthProvider with ChangeNotifier {
     } finally {
       _setLoading(false);
     }
-  }
-
-  Future<void> logout() async {
-    await _storageService.clearAll();
-    _isAuthenticated = false;
-    _userId = null;
-    _userName = null;
-    _userType = null;
-    _token = null;
-    notifyListeners();
   }
 
   Future<void> _saveAuthData({

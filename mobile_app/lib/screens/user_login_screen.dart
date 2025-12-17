@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../utils/theme.dart';
 import 'user_dashboard_screen.dart';
 import 'user_oauth_profile_screen.dart';
+import 'user_complete_profile_screen.dart';
 
 class UserLoginScreen extends StatefulWidget {
   const UserLoginScreen({super.key});
@@ -34,12 +35,29 @@ class _UserLoginScreenState extends State<UserLoginScreen> {
     final authProvider = context.read<AuthProvider>();
 
     try {
-      await authProvider.loginUser(
+      final response = await authProvider.loginUser(
         userId: _userIdController.text.trim(),
         password: _passwordController.text,
       );
 
       if (mounted) {
+        // Check if profile needs to be completed
+        if (response.profileCompleted == false ||
+            response.needsPhone == true ||
+            response.needsPin == true) {
+          // Navigate to complete profile screen
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => UserCompleteProfileScreen(
+                userId: response.id,
+                userName: response.name,
+              ),
+            ),
+          );
+          return;
+        }
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const UserDashboardScreen()),

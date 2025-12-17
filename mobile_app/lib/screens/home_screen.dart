@@ -49,12 +49,12 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               // Logo and Title
-              const Icon(
-                Icons.account_balance_wallet,
-                size: 100,
-                color: Colors.white,
+              Image.asset(
+                'assets/images/logo.png',
+                width: 150,
+                height: 150,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               const Text(
                 'MEWallet',
                 style: TextStyle(

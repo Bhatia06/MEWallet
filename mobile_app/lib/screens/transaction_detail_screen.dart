@@ -196,11 +196,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddBalanceDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Balance'),
-      ),
     );
   }
 

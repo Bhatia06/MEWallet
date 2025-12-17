@@ -105,6 +105,7 @@ class Transaction {
   final double balanceAfter;
   final DateTime? createdAt;
   final String? storeName;
+  final String? userName;
 
   Transaction({
     required this.id,
@@ -115,6 +116,7 @@ class Transaction {
     required this.balanceAfter,
     this.createdAt,
     this.storeName,
+    this.userName,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
@@ -129,6 +131,7 @@ class Transaction {
           ? DateTime.parse(json['created_at'])
           : null,
       storeName: json['store_name'],
+      userName: json['user_name'],
     );
   }
 
@@ -142,7 +145,9 @@ class AuthResponse {
   final String name;
   final String accessToken;
   final String tokenType;
-  final bool? profileCompleted; // For OAuth users
+  final bool? profileCompleted;
+  final bool? needsPhone;
+  final bool? needsPin;
   final String? ownerName; // For OAuth merchants
   final String? googleEmail; // For OAuth users/merchants
 
@@ -153,6 +158,8 @@ class AuthResponse {
     required this.accessToken,
     required this.tokenType,
     this.profileCompleted,
+    this.needsPhone,
+    this.needsPin,
     this.ownerName,
     this.googleEmail,
   });
@@ -165,6 +172,8 @@ class AuthResponse {
       accessToken: json['access_token'] ?? '',
       tokenType: json['token_type'] ?? 'bearer',
       profileCompleted: json['profile_completed'],
+      needsPhone: json['needs_phone'],
+      needsPin: json['needs_pin'],
       ownerName: json['owner_name'],
       googleEmail: json['google_email'],
     );
@@ -258,6 +267,66 @@ class LinkRequest {
       'merchant_id': merchantId,
       'user_id': userId,
       'pin': pin,
+    };
+  }
+}
+
+class PayRequest {
+  final int id;
+  final String merchantId;
+  final String userId;
+  final double amount;
+  final String? description;
+  final String status; // 'pending', 'accepted', 'rejected'
+  final DateTime? createdAt;
+  final DateTime? respondedAt;
+  final String? storeName;
+  final String? userName;
+
+  PayRequest({
+    required this.id,
+    required this.merchantId,
+    required this.userId,
+    required this.amount,
+    this.description,
+    required this.status,
+    this.createdAt,
+    this.respondedAt,
+    this.storeName,
+    this.userName,
+  });
+
+  factory PayRequest.fromJson(Map<String, dynamic> json) {
+    return PayRequest(
+      id: json['id'],
+      merchantId: json['merchant_id'] ?? '',
+      userId: json['user_id'] ?? '',
+      amount: (json['amount'] ?? 0).toDouble(),
+      description: json['description'],
+      status: json['status'] ?? 'pending',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+      respondedAt: json['responded_at'] != null
+          ? DateTime.parse(json['responded_at'])
+          : null,
+      storeName: json['store_name'],
+      userName: json['user_name'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'merchant_id': merchantId,
+      'user_id': userId,
+      'amount': amount,
+      'description': description,
+      'status': status,
+      'created_at': createdAt?.toIso8601String(),
+      'responded_at': respondedAt?.toIso8601String(),
+      'store_name': storeName,
+      'user_name': userName,
     };
   }
 }
