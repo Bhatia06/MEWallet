@@ -119,6 +119,8 @@ class AuthProvider with ChangeNotifier {
   Future<void> registerUser({
     required String userName,
     required String password,
+    required String phone,
+    required String pin,
   }) async {
     _setLoading(true);
     _error = null;
@@ -127,6 +129,8 @@ class AuthProvider with ChangeNotifier {
       final response = await _apiService.registerUser(
         userName: userName,
         password: password,
+        phone: phone,
+        pin: pin,
       );
 
       await _saveAuthData(
@@ -229,7 +233,7 @@ class AuthProvider with ChangeNotifier {
     required String storeName,
     required String ownerName,
     required String token,
-    String? phone,
+    required String phone,
     String? storeAddress,
   }) async {
     _setLoading(true);
@@ -274,7 +278,8 @@ class AuthProvider with ChangeNotifier {
     required String userId,
     required String userName,
     required String token,
-    String? phone,
+    required String phone,
+    required String pin,
   }) async {
     _setLoading(true);
     _error = null;
@@ -289,6 +294,7 @@ class AuthProvider with ChangeNotifier {
         userName: userName,
         token: token,
         phone: phone,
+        pin: pin,
       );
 
       // Profile completed, update local state
@@ -312,7 +318,7 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<AuthResponse> loginUser({
-    required String userId,
+    required String phone,
     required String password,
   }) async {
     _setLoading(true);
@@ -320,7 +326,7 @@ class AuthProvider with ChangeNotifier {
 
     try {
       final response = await _apiService.loginUser(
-        userId: userId,
+        phone: phone,
         password: password,
       );
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:pinput/pinput.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/api_service.dart';
@@ -29,6 +30,7 @@ class _UserOAuthProfileScreenState extends State<UserOAuthProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _pinController = TextEditingController();
   bool _isLoading = false;
 
   @override
@@ -42,11 +44,22 @@ class _UserOAuthProfileScreenState extends State<UserOAuthProfileScreen> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
   Future<void> _handleCompleteProfile() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (_pinController.text.length != 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a 4-digit PIN'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -57,9 +70,8 @@ class _UserOAuthProfileScreenState extends State<UserOAuthProfileScreen> {
         userId: widget.userId,
         userName: _nameController.text.trim(),
         token: widget.token,
-        phone: _phoneController.text.trim().isEmpty
-            ? null
-            : _phoneController.text.trim(),
+        phone: _phoneController.text.trim(),
+        pin: _pinController.text,
       );
 
       if (mounted) {
@@ -188,35 +200,88 @@ class _UserOAuthProfileScreenState extends State<UserOAuthProfileScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Phone Number (Optional)
+              // Phone Number (Required)
               TextFormField(
                 controller: _phoneController,
                 decoration: const InputDecoration(
-                  labelText: 'Phone Number (Optional)',
-                  hintText: 'For account recovery',
+                  labelText: 'Phone Number *',
+                  hintText: 'Your mobile number',
                   prefixIcon: Icon(Icons.phone),
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.phone,
                 maxLength: 10,
                 validator: (value) {
-                  if (value != null && value.trim().isNotEmpty) {
-                    if (value.trim().length != 10) {
-                      return 'Phone number must be 10 digits';
-                    }
-                    if (!RegExp(r'^\d{10}$').hasMatch(value.trim())) {
-                      return 'Phone number must contain only digits';
-                    }
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Phone number is required';
+                  }
+                  if (value.trim().length != 10) {
+                    return 'Phone number must be 10 digits';
+                  }
+                  if (!RegExp(r'^\d{10}$').hasMatch(value.trim())) {
+                    return 'Phone number must contain only digits';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 10),
 
+              const SizedBox(height: 30),
+
+              // PIN Input (Required)
               Text(
-                'Note: Your phone number is confidential and stored securely for account recovery only.',
+                'Create 4-Digit PIN *',
+                style: AppTheme.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFFF5F5DC)
+                      : AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Pinput(
+                controller: _pinController,
+                length: 4,
+                obscureText: true,
+                defaultPinTheme: PinTheme(
+                  width: 56,
+                  height: 56,
+                  textStyle: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF4A4A4A)
+                          : const Color(0xFFE0E0E0),
+                    ),
+                  ),
+                ),
+                focusedPinTheme: PinTheme(
+                  width: 56,
+                  height: 56,
+                  textStyle: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.primaryColor, width: 2),
+                  ),
+                ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'PIN is required';
+                  if (v.length != 4) return 'PIN must be 4 digits';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'This PIN will be used to verify purchases',
                 style: AppTheme.bodySmall.copyWith(
-                  color: AppTheme.textSecondary,
+                  color: AppTheme.warningColor,
                   fontStyle: FontStyle.italic,
                 ),
                 textAlign: TextAlign.center,

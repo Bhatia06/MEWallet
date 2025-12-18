@@ -18,13 +18,13 @@ class UserLoginScreen extends StatefulWidget {
 
 class _UserLoginScreenState extends State<UserLoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _userIdController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
   @override
   void dispose() {
-    _userIdController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -36,7 +36,7 @@ class _UserLoginScreenState extends State<UserLoginScreen> {
 
     try {
       final response = await authProvider.loginUser(
-        userId: _userIdController.text.trim(),
+        phone: _phoneController.text.trim(),
         password: _passwordController.text,
       );
 
@@ -115,13 +115,22 @@ class _UserLoginScreenState extends State<UserLoginScreen> {
                   ),
                   const SizedBox(height: 40),
                   TextFormField(
-                    controller: _userIdController,
+                    controller: _phoneController,
                     decoration: const InputDecoration(
-                        labelText: 'User ID',
-                        hintText: 'URxxxxxx',
-                        prefixIcon: Icon(Icons.badge)),
-                    validator: (v) =>
-                        v == null || v.isEmpty ? 'User ID is required' : null,
+                        labelText: 'Phone Number',
+                        hintText: '1234567890',
+                        prefixIcon: Icon(Icons.phone)),
+                    keyboardType: TextInputType.phone,
+                    maxLength: 10,
+                    validator: (v) {
+                      if (v == null || v.isEmpty) {
+                        return 'Phone number is required';
+                      }
+                      if (v.length != 10) {
+                        return 'Phone number must be 10 digits';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 20),
                   TextFormField(

@@ -157,10 +157,14 @@ class ApiService {
   Future<AuthResponse> registerUser({
     required String userName,
     required String password,
+    required String phone,
+    required String pin,
   }) async {
     final response = await _makeRequest('POST', '/user/register', body: {
       'user_name': userName,
       'user_passw': password,
+      'phone': phone,
+      'pin': pin,
     });
 
     return AuthResponse.fromJson(response, false);
@@ -185,7 +189,7 @@ class ApiService {
     required String storeName,
     required String ownerName,
     required String token,
-    String? phone,
+    required String phone,
     String? storeAddress,
   }) async {
     final response =
@@ -194,7 +198,7 @@ class ApiService {
               'merchant_id': merchantId,
               'store_name': storeName,
               'owner_name': ownerName,
-              if (phone != null && phone.isNotEmpty) 'phone': phone,
+              'phone': phone,
               if (storeAddress != null && storeAddress.isNotEmpty)
                 'store_address': storeAddress,
             },
@@ -208,13 +212,15 @@ class ApiService {
     required String userId,
     required String userName,
     required String token,
-    String? phone,
+    required String phone,
+    required String pin,
   }) async {
     final response = await _makeRequest('POST', '/oauth/user/complete-profile',
         body: {
           'user_id': userId,
           'user_name': userName,
-          if (phone != null && phone.isNotEmpty) 'phone': phone,
+          'pin': pin,
+          'phone': phone,
         },
         token: token);
 
@@ -240,11 +246,11 @@ class ApiService {
   }
 
   Future<AuthResponse> loginUser({
-    required String userId,
+    required String phone,
     required String password,
   }) async {
     final response = await _makeRequest('POST', '/user/login', body: {
-      'user_id': userId,
+      'phone': phone,
       'user_passw': password,
     });
 
@@ -599,6 +605,145 @@ class ApiService {
   Future<Map<String, dynamic>> rejectPayRequest(
       int requestId, String token) async {
     return await _makeRequest('POST', '/pay-requests/reject/$requestId',
+        token: token);
+  }
+
+  // User Profile APIs
+  Future<Map<String, dynamic>> getUserProfileDetails({
+    required String userId,
+    required String token,
+  }) async {
+    return await _makeRequest('GET', '/user/profile/$userId', token: token);
+  }
+
+  Future<Map<String, dynamic>> updateUserProfile({
+    required String userId,
+    required String token,
+    required String userName,
+    required String phone,
+    String? dob,
+  }) async {
+    return await _makeRequest('PUT', '/user/profile/$userId',
+        body: {
+          'user_name': userName,
+          'phone': phone,
+          if (dob != null) 'dob': dob,
+        },
+        token: token);
+  }
+
+  Future<Map<String, dynamic>> linkGoogleAccount({
+    required String userId,
+    required String token,
+    required String idToken,
+  }) async {
+    return await _makeRequest('POST', '/user/link-google',
+        body: {
+          'user_id': userId,
+          'id_token': idToken,
+        },
+        token: token);
+  }
+
+  Future<Map<String, dynamic>> deleteUserAccount({
+    required String userId,
+    required String token,
+  }) async {
+    return await _makeRequest('DELETE', '/user/account/$userId', token: token);
+  }
+
+  // Merchant Profile APIs
+  Future<Map<String, dynamic>> getMerchantProfileDetails({
+    required String merchantId,
+    required String token,
+  }) async {
+    return await _makeRequest('GET', '/merchant/profile/$merchantId',
+        token: token);
+  }
+
+  Future<Map<String, dynamic>> updateMerchantProfile({
+    required String merchantId,
+    required String token,
+    required String storeName,
+    required String phone,
+    String? storeAddress,
+  }) async {
+    return await _makeRequest('PUT', '/merchant/profile/$merchantId',
+        body: {
+          'store_name': storeName,
+          'phone': phone,
+          if (storeAddress != null && storeAddress.isNotEmpty)
+            'store_address': storeAddress,
+        },
+        token: token);
+  }
+
+  Future<Map<String, dynamic>> linkGoogleAccountMerchant({
+    required String merchantId,
+    required String token,
+    required String idToken,
+  }) async {
+    return await _makeRequest('POST', '/merchant/link-google',
+        body: {
+          'merchant_id': merchantId,
+          'id_token': idToken,
+        },
+        token: token);
+  }
+
+  Future<Map<String, dynamic>> setUserPassword({
+    required String userId,
+    required String token,
+    required String password,
+  }) async {
+    return await _makeRequest('POST', '/user/set-password',
+        body: {
+          'user_id': userId,
+          'password': password,
+        },
+        token: token);
+  }
+
+  Future<Map<String, dynamic>> updateUserPassword({
+    required String userId,
+    required String token,
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    return await _makeRequest('POST', '/user/update-password',
+        body: {
+          'user_id': userId,
+          'old_password': oldPassword,
+          'new_password': newPassword,
+        },
+        token: token);
+  }
+
+  Future<Map<String, dynamic>> setMerchantPassword({
+    required String merchantId,
+    required String token,
+    required String password,
+  }) async {
+    return await _makeRequest('POST', '/merchant/set-password',
+        body: {
+          'merchant_id': merchantId,
+          'password': password,
+        },
+        token: token);
+  }
+
+  Future<Map<String, dynamic>> updateMerchantPassword({
+    required String merchantId,
+    required String token,
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    return await _makeRequest('POST', '/merchant/update-password',
+        body: {
+          'merchant_id': merchantId,
+          'old_password': oldPassword,
+          'new_password': newPassword,
+        },
         token: token);
   }
 }

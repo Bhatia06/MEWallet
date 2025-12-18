@@ -10,6 +10,7 @@ import 'home_screen.dart';
 import 'add_user_screen.dart';
 import 'transaction_detail_screen.dart';
 import 'merchant_deduct_balance_screen.dart';
+import 'merchant_settings_screen.dart';
 
 class MerchantDashboardScreen extends StatefulWidget {
   const MerchantDashboardScreen({super.key});
@@ -234,26 +235,15 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
           title: const Text('Dashboard'),
           actions: [
             IconButton(
-              icon: const Icon(Icons.settings_outlined),
+              icon: const Icon(Icons.settings),
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Settings coming soon')),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MerchantSettingsScreen(),
+                  ),
                 );
               },
-            ),
-            IconButton(
-              icon: Icon(
-                Theme.of(context).brightness == Brightness.dark
-                    ? Icons.light_mode
-                    : Icons.dark_mode,
-              ),
-              onPressed: () {
-                context.read<ThemeProvider>().toggleTheme();
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: () => _showLogoutConfirmation(authProvider),
             ),
           ],
         ),
@@ -549,14 +539,10 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   }
 
   Widget _buildUserCard(MerchantUserLink link) {
-    final isNegative = link.balance < 0;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: isNegative
-            ? const BorderSide(color: AppTheme.errorColor, width: 2)
-            : BorderSide.none,
       ),
       child: InkWell(
         onTap: () => _showUserActionsBottomSheet(link),

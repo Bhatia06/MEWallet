@@ -12,6 +12,7 @@ import 'link_merchant_screen.dart';
 import 'request_balance_screen.dart';
 import 'pay_merchant_screen.dart';
 import 'accept_pay_request_screen.dart';
+import 'user_settings_screen.dart';
 
 class UserDashboardScreen extends StatefulWidget {
   const UserDashboardScreen({super.key});
@@ -400,27 +401,15 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
           title: const Text('My Wallet'),
           actions: [
             IconButton(
-              icon: const Icon(Icons.settings_outlined),
+              icon: const Icon(Icons.settings),
               onPressed: () {
-                // TODO: Navigate to settings/profile page
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Settings coming soon')),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const UserSettingsScreen(),
+                  ),
                 );
               },
-            ),
-            IconButton(
-              icon: Icon(
-                Theme.of(context).brightness == Brightness.dark
-                    ? Icons.light_mode
-                    : Icons.dark_mode,
-              ),
-              onPressed: () {
-                context.read<ThemeProvider>().toggleTheme();
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: () => _showLogoutConfirmation(authProvider),
             ),
           ],
           bottom: TabBar(

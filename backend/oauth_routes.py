@@ -265,11 +265,18 @@ async def complete_merchant_profile(request: Request, profile_data: MerchantOAut
         
         supabase = get_supabase_client()
         
+        # Validate phone is provided
+        if not profile_data.phone or len(profile_data.phone.strip()) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Phone number is required"
+            )
+        
         # Update merchant profile
         result = supabase.table("merchants").update({
             "store_name": profile_data.store_name,
             "owner_name": profile_data.owner_name,
-            "phone": profile_data.phone or "",
+            "phone": profile_data.phone.strip(),
             "store_address": profile_data.store_address or "",
             "profile_completed": True
         }).eq("id", profile_data.merchant_id).execute()
@@ -309,10 +316,22 @@ async def complete_user_profile(request: Request, profile_data: UserOAuthProfile
         
         supabase = get_supabase_client()
         
-        # Update user profile
+        # Validate phone is provided
+        if not profile_data.phone or len(profile_data.phone.strip()) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Phone number is required"
+            )
+        
+        # Hash the PIN
+        from utils import hash_password
+        hashed_pin = hash_password(profile_data.pin)
+        
+        # Update user profile with phone and PIN
         result = supabase.table("users").update({
             "user_name": profile_data.user_name,
-            "phone": profile_data.phone or "",
+            "phone": profile_data.phone.strip(),
+            "pin": hashed_pin,
             "profile_completed": True
         }).eq("id", profile_data.user_id).execute()
         

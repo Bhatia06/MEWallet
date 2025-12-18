@@ -64,9 +64,7 @@ class _MerchantOAuthProfileScreenState
         storeName: _storeNameController.text.trim(),
         ownerName: _ownerNameController.text.trim(),
         token: widget.token,
-        phone: _phoneController.text.trim().isEmpty
-            ? null
-            : _phoneController.text.trim(),
+        phone: _phoneController.text.trim(),
         storeAddress: _addressController.text.trim().isEmpty
             ? null
             : _addressController.text.trim(),
@@ -178,25 +176,26 @@ class _MerchantOAuthProfileScreenState
               ),
               const SizedBox(height: 20),
 
-              // Phone Number (Optional)
+              // Phone Number (Required)
               TextFormField(
                 controller: _phoneController,
                 decoration: const InputDecoration(
-                  labelText: 'Phone Number (Optional)',
-                  hintText: 'For account recovery',
+                  labelText: 'Phone Number *',
+                  hintText: 'Your mobile number',
                   prefixIcon: Icon(Icons.phone),
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.phone,
                 maxLength: 10,
                 validator: (value) {
-                  if (value != null && value.trim().isNotEmpty) {
-                    if (value.trim().length != 10) {
-                      return 'Phone number must be 10 digits';
-                    }
-                    if (!RegExp(r'^\d{10}$').hasMatch(value.trim())) {
-                      return 'Phone number must contain only digits';
-                    }
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Phone number is required';
+                  }
+                  if (value.trim().length != 10) {
+                    return 'Phone number must be 10 digits';
+                  }
+                  if (!RegExp(r'^\d{10}$').hasMatch(value.trim())) {
+                    return 'Phone number must contain only digits';
                   }
                   return null;
                 },

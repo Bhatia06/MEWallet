@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../utils/theme.dart';
 import 'user_dashboard_screen.dart';
 import 'user_oauth_profile_screen.dart';
+import 'user_registration_profile_screen.dart';
 
 class UserRegisterScreen extends StatefulWidget {
   const UserRegisterScreen({super.key});
@@ -34,74 +35,16 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final authProvider = context.read<AuthProvider>();
-
-    try {
-      await authProvider.registerUser(
-        userName: _userNameController.text.trim(),
-        password: _passwordController.text,
-      );
-
-      if (mounted) {
-        // Show user ID
-        final userId = authProvider.userId;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Registration Successful!'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Your User ID is:'),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SelectableText(
-                    userId ?? '',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryColor,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Please save this ID. You will need it to login.',
-                  style: TextStyle(color: AppTheme.errorColor),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const UserDashboardScreen()),
-                  );
-                },
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-        );
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(e.message), backgroundColor: AppTheme.errorColor),
-        );
-      }
-    }
+    // Navigate to profile completion screen with credentials
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserRegistrationProfileScreen(
+          userName: _userNameController.text.trim(),
+          password: _passwordController.text,
+        ),
+      ),
+    );
   }
 
   @override
