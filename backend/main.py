@@ -6,16 +6,17 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
-from merchant_routes import router as merchant_router
-from user_routes import router as user_router
-from transaction_routes import router as transaction_router
-from balance_request_routes import router as balance_request_router
-from link_request_routes import router as link_request_router
-from oauth_routes import router as oauth_router
-from otp_routes import router as otp_router
-from check_routes import router as check_router
+from routes.merchant_routes import router as merchant_router
+from routes.user_routes import router as user_router
+from routes.transaction_routes import router as transaction_router
+from routes.balance_request_routes import router as balance_request_router
+from routes.link_request_routes import router as link_request_router
+from routes.oauth_routes import router as oauth_router
+from routes.otp_routes import router as otp_router
+from routes.check_routes import router as check_router
+from routes.websocket_routes import router as websocket_router
 from routes.pay_request_routes import router as pay_request_router
-from database import test_connection
+from core.database import test_connection
 import uvicorn
 
 # Rate limiter setup
@@ -162,6 +163,7 @@ app.include_router(link_request_router)
 app.include_router(oauth_router)
 app.include_router(otp_router)
 app.include_router(check_router)
+app.include_router(websocket_router)
 app.include_router(pay_request_router)
 
 

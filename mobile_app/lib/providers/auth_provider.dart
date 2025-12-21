@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/websocket_service.dart';
 import '../models/models.dart';
 
 class AuthProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
   final StorageService _storageService = StorageService();
+  final WebSocketService _webSocketService = WebSocketService();
 
   bool _isLoading = false;
   String? _error;
@@ -37,11 +39,19 @@ class AuthProvider with ChangeNotifier {
       _userName = _storageService.getUserName();
       _userType = _storageService.getUserType();
       _token = _storageService.getToken();
+
+      // Connect WebSocket if authenticated
+      if (_userId != null && _userType != null) {
+        _webSocketService.connect(_userId!, _userType!);
+      }
     }
     notifyListeners();
   }
 
   Future<void> logout() async {
+    // Disconnect WebSocket before logout
+    _webSocketService.disconnect();
+
     await _storageService.clearAll();
     _isAuthenticated = false;
     _userId = null;
@@ -395,6 +405,9 @@ class AuthProvider with ChangeNotifier {
     _userName = name;
     _token = token;
     _userType = userType;
+
+    // Connect WebSocket after successful authentication
+    _webSocketService.connect(id, userType);
   }
 
   void _setLoading(bool value) {

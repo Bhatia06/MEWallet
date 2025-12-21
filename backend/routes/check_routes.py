@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from database import get_supabase_client
+from core.database import get_supabase_client
 
 router = APIRouter(prefix="/check", tags=["Validation"])
 limiter = Limiter(key_func=get_remote_address)

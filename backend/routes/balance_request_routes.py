@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends, Request
-from database import get_supabase_client
-from models import BalanceRequest
-from auth_middleware import get_current_user
+from core.database import get_supabase_client
+from core.models import BalanceRequest
+from middleware.auth_middleware import get_current_user
 from datetime import datetime
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -91,7 +91,7 @@ async def get_merchant_requests(merchant_id: str, current_user: dict = Depends(g
     """Get all pending balance requests for a merchant"""
     try:
         # Verify merchant can only access their own requests
-        from auth_middleware import verify_resource_ownership
+        from middleware.auth_middleware import verify_resource_ownership
         verify_resource_ownership(current_user, merchant_id)
         
         supabase = get_supabase_client()

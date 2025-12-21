@@ -3,7 +3,7 @@ Authentication middleware and dependencies for JWT validation
 """
 from fastapi import Header, HTTPException, status
 from typing import Optional
-from utils import verify_token
+from core.utils import verify_token
 
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")) -> dict:

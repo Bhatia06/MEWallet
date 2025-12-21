@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, status, Request, Depends
-from database import get_supabase_client
-from models import GoogleOAuthLogin, MerchantOAuthProfileComplete, UserOAuthProfileComplete
-from utils import generate_merchant_id, generate_user_id, create_access_token
-from config import get_settings
+from core.database import get_supabase_client
+from core.models import GoogleOAuthLogin, MerchantOAuthProfileComplete, UserOAuthProfileComplete
+from core.utils import generate_merchant_id, generate_user_id, create_access_token
+from core.config import get_settings
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from datetime import timedelta
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from auth_middleware import get_current_user
+from middleware.auth_middleware import get_current_user
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -260,7 +260,7 @@ async def complete_merchant_profile(request: Request, profile_data: MerchantOAut
     """Complete merchant OAuth profile with store details"""
     try:
         # Verify merchant can only complete their own profile
-        from auth_middleware import verify_resource_ownership
+        from middleware.auth_middleware import verify_resource_ownership
         verify_resource_ownership(current_user, profile_data.merchant_id)
         
         supabase = get_supabase_client()
@@ -311,7 +311,7 @@ async def complete_user_profile(request: Request, profile_data: UserOAuthProfile
     """Complete user OAuth profile"""
     try:
         # Verify user can only complete their own profile
-        from auth_middleware import verify_resource_ownership
+        from middleware.auth_middleware import verify_resource_ownership
         verify_resource_ownership(current_user, profile_data.user_id)
         
         supabase = get_supabase_client()
@@ -324,7 +324,7 @@ async def complete_user_profile(request: Request, profile_data: UserOAuthProfile
             )
         
         # Hash the PIN
-        from utils import hash_password
+        from core.utils import hash_password
         hashed_pin = hash_password(profile_data.pin)
         
         # Update user profile with phone and PIN

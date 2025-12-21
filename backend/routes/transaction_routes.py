@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
-from database import get_supabase_client
-from models import MerchantUserLink, AddBalance, ProcessTransaction, TransactionResponse
-from utils import hash_password, verify_password, verify_pin
-from auth_middleware import get_current_user
+from core.database import get_supabase_client
+from core.models import MerchantUserLink, AddBalance, ProcessTransaction, TransactionResponse
+from core.utils import hash_password, verify_password, verify_pin
+from middleware.auth_middleware import get_current_user
 from datetime import datetime, timezone, timedelta
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from core.websocket_manager import manager
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -204,6 +205,24 @@ async def add_balance(request: Request, balance_data: AddBalance, current_user: 
             "created_at": current_time_ist
         }).execute()
         
+        # Fetch user name for WebSocket broadcast
+        user_data = supabase.table("users").select("user_name").eq("id", balance_data.user_id).execute()
+        user_name = user_data.data[0]["user_name"] if user_data.data else "Customer"
+        
+        # Broadcast to merchant via WebSocket if connected
+        if manager.is_merchant_connected(balance_data.merchant_id):
+            await manager.broadcast_balance_add_to_merchant(
+                balance_data.merchant_id,
+                {
+                    "user_id": balance_data.user_id,
+                    "user_name": user_name,
+                    "amount": balance_data.amount,
+                    "new_balance": new_balance,
+                    "transaction_id": transaction.data[0]["id"] if transaction.data else None,
+                    "timestamp": current_time_ist
+                }
+            )
+        
         return {
             "message": "Balance added successfully",
             "merchant_id": balance_data.merchant_id,
@@ -285,6 +304,24 @@ async def process_purchase(request: Request, transaction_data: ProcessTransactio
             "balance_after": new_balance,
             "created_at": current_time_ist
         }).execute()
+        
+        # Fetch user name for WebSocket broadcast
+        user_data = supabase.table("users").select("user_name").eq("id", transaction_data.user_id).execute()
+        user_name = user_data.data[0]["user_name"] if user_data.data else "Customer"
+        
+        # Broadcast to merchant via WebSocket if connected
+        if manager.is_merchant_connected(transaction_data.merchant_id):
+            await manager.broadcast_payment_to_merchant(
+                transaction_data.merchant_id,
+                {
+                    "user_id": transaction_data.user_id,
+                    "user_name": user_name,
+                    "amount": transaction_data.amount,
+                    "remaining_balance": new_balance,
+                    "transaction_id": transaction.data[0]["id"] if transaction.data else None,
+                    "timestamp": current_time_ist
+                }
+            )
         
         return {
             "message": "Purchase successful",
@@ -375,7 +412,7 @@ async def get_user_transactions(user_id: str, limit: int = 100, current_user: di
     """Get all transaction history for a user across all merchants"""
     try:
         # Verify user can only access their own transactions
-        from auth_middleware import verify_resource_ownership
+        from middleware.auth_middleware import verify_resource_ownership
         verify_resource_ownership(current_user, user_id)
         
         supabase = get_supabase_client()
@@ -411,7 +448,7 @@ async def get_merchant_transactions(merchant_id: str, limit: int = 100, current_
     """Get all transaction history for a merchant across all users"""
     try:
         # Verify merchant can only access their own transactions
-        from auth_middleware import verify_resource_ownership
+        from middleware.auth_middleware import verify_resource_ownership
         verify_resource_ownership(current_user, merchant_id)
         
         supabase = get_supabase_client()

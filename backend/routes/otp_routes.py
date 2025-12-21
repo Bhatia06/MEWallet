@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Request
 from pydantic import BaseModel
-from database import get_supabase_client
+from core.database import get_supabase_client
 import requests
 import random
 from datetime import datetime, timedelta

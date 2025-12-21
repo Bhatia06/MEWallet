@@ -1,73 +1,65 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Request
-from database import get_supabase_client
-from models import MerchantCreate, MerchantLogin, MerchantResponse, Token
-from utils import hash_password, verify_password, generate_merchant_id, create_access_token
-from auth_middleware import get_current_user, verify_resource_ownership
+from fastapi import APIRouter, HTTPException, status, Depends
+from core.database import get_supabase_client
+from core.models import UserCreate, UserLogin, UserResponse, Token
+from core.utils import hash_password, verify_password, generate_user_id, create_access_token
 from datetime import timedelta
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from middleware.auth_middleware import get_current_user, verify_resource_ownership
 from google.oauth2 import id_token
 from google.auth.transport import requests
-from config import get_settings
+from core.config import get_settings
 
 settings = get_settings()
-limiter = Limiter(key_func=get_remote_address)
 
-router = APIRouter(prefix="/merchant", tags=["Merchant"])
+router = APIRouter(prefix="/user", tags=["User"])
 
 
 @router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/minute")
-async def register_merchant(request: Request, merchant: MerchantCreate):
-    """Register a new merchant"""
+async def register_user(user: UserCreate):
+    """Register a new user"""
     try:
         supabase = get_supabase_client()
         
-        # Check if phone already exists
-        existing = supabase.table("merchants").select("*").eq("phone", merchant.phone).execute()
-        if existing.data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Phone number already registered"
-            )
-        
-        # Generate unique merchant ID
-        merchant_id = generate_merchant_id()
+        # Generate unique user ID
+        user_id = generate_user_id()
         
         # Ensure ID is unique
         while True:
-            check = supabase.table("merchants").select("*").eq("id", merchant_id).execute()
+            check = supabase.table("users").select("*").eq("id", user_id).execute()
             if not check.data:
                 break
-            merchant_id = generate_merchant_id()
+            user_id = generate_user_id()
         
         # Hash password
-        hashed_password = hash_password(merchant.password)
+        hashed_password = hash_password(user.user_passw)
         
-        # Insert merchant
-        result = supabase.table("merchants").insert({
-            "id": merchant_id,
-            "store_name": merchant.store_name,
-            "phone": merchant.phone,
-            "password": hashed_password
+        # Hash PIN
+        hashed_pin = hash_password(user.pin)
+        
+        # Insert user
+        result = supabase.table("users").insert({
+            "id": user_id,
+            "user_name": user.user_name,
+            "user_passw": hashed_password,
+            "phone": user.phone,
+            "pin": hashed_pin
         }).execute()
         
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create merchant account"
+                detail="Failed to create user account"
             )
         
         # Create access token
         access_token = create_access_token(
-            data={"sub": merchant_id, "user_type": "merchant"},
+            data={"sub": user_id, "user_type": "user"},
             expires_delta=timedelta(minutes=30)
         )
         
         return {
-            "message": "Merchant registered successfully",
-            "merchant_id": merchant_id,
-            "store_name": merchant.store_name,
+            "message": "User registered successfully",
+            "user_id": user_id,
+            "user_name": user.user_name,
             "access_token": access_token,
             "token_type": "bearer"
         }
@@ -82,14 +74,13 @@ async def register_merchant(request: Request, merchant: MerchantCreate):
 
 
 @router.post("/login", response_model=dict)
-@limiter.limit("10/minute")
-async def login_merchant(request: Request, merchant: MerchantLogin):
-    """Login merchant"""
+async def login_user(user: UserLogin):
+    """Login user"""
     try:
         supabase = get_supabase_client()
         
-        # Find merchant by phone
-        result = supabase.table("merchants").select("*").eq("phone", merchant.phone).execute()
+        # Find user by phone number
+        result = supabase.table("users").select("*").eq("phone", user.phone).execute()
         
         if not result.data:
             raise HTTPException(
@@ -97,10 +88,10 @@ async def login_merchant(request: Request, merchant: MerchantLogin):
                 detail="Invalid credentials"
             )
         
-        merchant_data = result.data[0]
+        user_data = result.data[0]
         
         # Verify password
-        if not verify_password(merchant.password, merchant_data["password"]):
+        if not verify_password(user.user_passw, user_data["user_passw"]):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials"
@@ -108,14 +99,14 @@ async def login_merchant(request: Request, merchant: MerchantLogin):
         
         # Create access token
         access_token = create_access_token(
-            data={"sub": merchant_data["id"], "user_type": "merchant"},
+            data={"sub": user_data["id"], "user_type": "user"},
             expires_delta=timedelta(minutes=30)
         )
         
         return {
             "message": "Login successful",
-            "merchant_id": merchant_data["id"],
-            "store_name": merchant_data["store_name"],
+            "user_id": user_data["id"],
+            "user_name": user_data["user_name"],
             "access_token": access_token,
             "token_type": "bearer"
         }
@@ -129,36 +120,33 @@ async def login_merchant(request: Request, merchant: MerchantLogin):
         )
 
 
-@router.get("/linked-users/{merchant_id}", response_model=list)
-async def get_linked_users(merchant_id: str, current_user: dict = Depends(get_current_user)):
-    """Get all users linked to a merchant"""
+@router.get("/linked-merchants/{user_id}", response_model=list)
+async def get_linked_merchants(user_id: str):
+    """Get all merchants linked to a user"""
     try:
-        # Verify merchant can only access their own links
-        verify_resource_ownership(current_user, merchant_id)
-        
         supabase = get_supabase_client()
         
         # Get all merchant-user links
         result = supabase.table("merchant_user_links").select(
-            "*, users(user_name)"
-        ).eq("merchant_id", merchant_id).execute()
+            "*, merchants(store_name, phone)"
+        ).eq("user_id", user_id).execute()
         
         if not result.data:
             return []
         
         # Format response
-        linked_users = []
+        linked_merchants = []
         for link in result.data:
-            linked_users.append({
+            linked_merchants.append({
                 "link_id": link["id"],
                 "merchant_id": link["merchant_id"],
                 "user_id": link["user_id"],
-                "user_name": link["users"]["user_name"] if link.get("users") else "Unknown",
+                "store_name": link["merchants"]["store_name"] if link.get("merchants") else "Unknown",
                 "balance": link["balance"],
                 "created_at": link["created_at"]
             })
         
-        return linked_users
+        return linked_merchants
         
     except Exception as e:
         raise HTTPException(
@@ -167,28 +155,29 @@ async def get_linked_users(merchant_id: str, current_user: dict = Depends(get_cu
         )
 
 
-@router.get("/profile/{merchant_id}", response_model=dict)
-async def get_merchant_profile_details(merchant_id: str, current_user: dict = Depends(get_current_user)):
-    """Get detailed merchant profile"""
+@router.get("/profile/{user_id}", response_model=dict)
+async def get_user_profile_details(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Get detailed user profile"""
     try:
-        verify_resource_ownership(current_user, merchant_id)
+        verify_resource_ownership(current_user, user_id)
         supabase = get_supabase_client()
         
-        result = supabase.table("merchants").select("id, store_name, phone, store_address, google_id, google_email, password, created_at").eq("id", merchant_id).execute()
+        result = supabase.table("users").select("id, user_name, phone, dob, google_id, google_email, user_passw, created_at").eq("id", user_id).execute()
         
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Merchant not found"
+                detail="User not found"
             )
         
-        merchant_data = result.data[0]
+        user_data = result.data[0]
         # Don't send password hash, just indicate if it exists
-        has_password = bool(merchant_data.get("password") and merchant_data.get("password").strip())
-        merchant_data["has_password"] = has_password
-        del merchant_data["password"]  # Remove password hash from response
+        password_value = user_data.get("user_passw")
+        has_password = bool(password_value and password_value.strip())
+        user_data["has_password"] = has_password
+        del user_data["user_passw"]  # Remove password hash from response
         
-        return merchant_data
+        return user_data
         
     except HTTPException:
         raise
@@ -199,20 +188,20 @@ async def get_merchant_profile_details(merchant_id: str, current_user: dict = De
         )
 
 
-@router.put("/profile/{merchant_id}", response_model=dict)
-async def update_merchant_profile(merchant_id: str, profile_data: dict, current_user: dict = Depends(get_current_user)):
-    """Update merchant profile"""
+@router.put("/profile/{user_id}", response_model=dict)
+async def update_user_profile(user_id: str, profile_data: dict, current_user: dict = Depends(get_current_user)):
+    """Update user profile"""
     try:
-        verify_resource_ownership(current_user, merchant_id)
+        verify_resource_ownership(current_user, user_id)
         supabase = get_supabase_client()
         
         update_data = {}
-        if "store_name" in profile_data:
-            update_data["store_name"] = profile_data["store_name"]
+        if "user_name" in profile_data:
+            update_data["user_name"] = profile_data["user_name"]
         if "phone" in profile_data:
             update_data["phone"] = profile_data["phone"]
-        if "store_address" in profile_data:
-            update_data["store_address"] = profile_data["store_address"]
+        if "dob" in profile_data:
+            update_data["dob"] = profile_data["dob"]
         
         if not update_data:
             raise HTTPException(
@@ -220,17 +209,17 @@ async def update_merchant_profile(merchant_id: str, profile_data: dict, current_
                 detail="No valid fields to update"
             )
         
-        result = supabase.table("merchants").update(update_data).eq("id", merchant_id).execute()
+        result = supabase.table("users").update(update_data).eq("id", user_id).execute()
         
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Merchant not found"
+                detail="User not found"
             )
         
         return {
             "message": "Profile updated successfully",
-            "merchant": result.data[0]
+            "user": result.data[0]
         }
         
     except HTTPException:
@@ -243,19 +232,19 @@ async def update_merchant_profile(merchant_id: str, profile_data: dict, current_
 
 
 @router.post("/link-google", response_model=dict)
-async def link_google_to_merchant(link_data: dict, current_user: dict = Depends(get_current_user)):
-    """Link Google account to existing merchant"""
+async def link_google_to_user(link_data: dict, current_user: dict = Depends(get_current_user)):
+    """Link Google account to existing user"""
     try:
-        merchant_id = link_data.get("merchant_id")
+        user_id = link_data.get("user_id")
         id_token_str = link_data.get("id_token")
         
-        if not merchant_id or not id_token_str:
+        if not user_id or not id_token_str:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="merchant_id and id_token are required"
+                detail="user_id and id_token are required"
             )
         
-        verify_resource_ownership(current_user, merchant_id)
+        verify_resource_ownership(current_user, user_id)
         
         # Verify Google ID token
         try:
@@ -274,23 +263,23 @@ async def link_google_to_merchant(link_data: dict, current_user: dict = Depends(
         supabase = get_supabase_client()
         
         # Check if Google ID is already linked to another account
-        existing = supabase.table("merchants").select("*").eq("google_id", google_id).execute()
-        if existing.data and existing.data[0]["id"] != merchant_id:
+        existing = supabase.table("users").select("*").eq("google_id", google_id).execute()
+        if existing.data and existing.data[0]["id"] != user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This Google account is already linked to another merchant"
+                detail="This Google account is already linked to another user"
             )
         
         # Link Google account
-        result = supabase.table("merchants").update({
+        result = supabase.table("users").update({
             "google_id": google_id,
             "google_email": google_email
-        }).eq("id", merchant_id).execute()
+        }).eq("id", user_id).execute()
         
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Merchant not found"
+                detail="User not found"
             )
         
         return {
@@ -308,16 +297,16 @@ async def link_google_to_merchant(link_data: dict, current_user: dict = Depends(
 
 
 @router.post("/set-password", response_model=dict)
-async def set_merchant_password(password_data: dict, current_user: dict = Depends(get_current_user)):
-    """Set or update merchant password for manual login"""
+async def set_user_password(password_data: dict, current_user: dict = Depends(get_current_user)):
+    """Set or update user password for manual login"""
     try:
-        merchant_id = password_data.get("merchant_id")
+        user_id = password_data.get("user_id")
         password = password_data.get("password")
         
-        if not merchant_id or not password:
+        if not user_id or not password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="merchant_id and password are required"
+                detail="user_id and password are required"
             )
         
         if len(password) < 6:
@@ -326,23 +315,22 @@ async def set_merchant_password(password_data: dict, current_user: dict = Depend
                 detail="Password must be at least 6 characters"
             )
         
-        verify_resource_ownership(current_user, merchant_id)
+        verify_resource_ownership(current_user, user_id)
         
         supabase = get_supabase_client()
         
         # Hash the password
-        from utils import hash_password
         hashed_password = hash_password(password)
         
-        # Update merchant password
-        result = supabase.table("merchants").update({
-            "password": hashed_password
-        }).eq("id", merchant_id).execute()
+        # Update user password
+        result = supabase.table("users").update({
+            "user_passw": hashed_password
+        }).eq("id", user_id).execute()
         
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Merchant not found"
+                detail="User not found"
             )
         
         return {
@@ -357,18 +345,19 @@ async def set_merchant_password(password_data: dict, current_user: dict = Depend
             detail=f"An error occurred: {str(e)}"
         )
 
+
 @router.post("/update-password", response_model=dict)
-async def update_merchant_password(password_data: dict, current_user: dict = Depends(get_current_user)):
-    """Update merchant password with old password verification"""
+async def update_user_password(password_data: dict, current_user: dict = Depends(get_current_user)):
+    """Update user password with old password verification"""
     try:
-        merchant_id = password_data.get("merchant_id")
+        user_id = password_data.get("user_id")
         old_password = password_data.get("old_password")
         new_password = password_data.get("new_password")
         
-        if not merchant_id or not old_password or not new_password:
+        if not user_id or not old_password or not new_password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="merchant_id, old_password, and new_password are required"
+                detail="user_id, old_password, and new_password are required"
             )
         
         if len(new_password) < 6:
@@ -377,23 +366,22 @@ async def update_merchant_password(password_data: dict, current_user: dict = Dep
                 detail="New password must be at least 6 characters"
             )
         
-        verify_resource_ownership(current_user, merchant_id)
+        verify_resource_ownership(current_user, user_id)
         
         supabase = get_supabase_client()
         
-        # Get current merchant data
-        result = supabase.table("merchants").select("password").eq("id", merchant_id).execute()
+        # Get current user data
+        result = supabase.table("users").select("user_passw").eq("id", user_id).execute()
         
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Merchant not found"
+                detail="User not found"
             )
         
-        current_password_hash = result.data[0].get("password")
+        current_password_hash = result.data[0].get("user_passw")
         
         # Verify old password
-        from utils import verify_password
         if not current_password_hash or not verify_password(old_password, current_password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -401,18 +389,17 @@ async def update_merchant_password(password_data: dict, current_user: dict = Dep
             )
         
         # Hash the new password
-        from utils import hash_password
         hashed_password = hash_password(new_password)
         
-        # Update merchant password
-        update_result = supabase.table("merchants").update({
-            "password": hashed_password
-        }).eq("id", merchant_id).execute()
+        # Update user password
+        update_result = supabase.table("users").update({
+            "user_passw": hashed_password
+        }).eq("id", user_id).execute()
         
         if not update_result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Merchant not found"
+                detail="User not found"
             )
         
         return {
@@ -426,3 +413,63 @@ async def update_merchant_password(password_data: dict, current_user: dict = Dep
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred: {str(e)}"
         )
+
+
+@router.delete("/account/{user_id}", response_model=dict)
+async def delete_user_account(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete user account - only if all balances are zero"""
+    try:
+        verify_resource_ownership(current_user, user_id)
+        supabase = get_supabase_client()
+        
+        # Check all merchant links for non-zero balances
+        links = supabase.table("merchant_user_links").select("balance, merchant_id, merchants(store_name)").eq("user_id", user_id).execute()
+        
+        if links.data:
+            non_zero_balances = [link for link in links.data if link["balance"] != 0]
+            if non_zero_balances:
+                details = []
+                for link in non_zero_balances:
+                    store_name = link.get("merchants", {}).get("store_name", "Unknown Store") if link.get("merchants") else "Unknown Store"
+                    balance = link["balance"]
+                    status_msg = f"{store_name}: ₹{abs(balance)} {'owed by you' if balance < 0 else 'credit'}"
+                    details.append(status_msg)
+                
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot delete account. Please clear all balances first:\n" + "\n".join(details)
+                )
+        
+        # Delete all transactions
+        supabase.table("transactions").delete().eq("user_id", user_id).execute()
+        
+        # Delete all balance requests
+        supabase.table("balance_requests").delete().eq("user_id", user_id).execute()
+        
+        # Delete all link requests
+        supabase.table("link_requests").delete().eq("user_id", user_id).execute()
+        
+        # Delete all merchant-user links
+        supabase.table("merchant_user_links").delete().eq("user_id", user_id).execute()
+        
+        # Delete user
+        result = supabase.table("users").delete().eq("id", user_id).execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        return {
+            "message": "Account deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred: {str(e)}"
+        )
+

@@ -1,5 +1,5 @@
 from supabase import create_client, Client
-from config import get_settings
+from core.config import get_settings
 from typing import Optional
 
 settings = get_settings()

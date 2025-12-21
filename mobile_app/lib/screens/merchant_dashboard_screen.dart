@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
@@ -7,6 +8,7 @@ import '../utils/theme.dart';
 import '../utils/auth_error_handler.dart';
 import '../models/models.dart';
 import '../services/tts_service.dart';
+import '../services/websocket_service.dart';
 import 'home_screen.dart';
 import 'add_user_screen.dart';
 import 'transaction_detail_screen.dart';
@@ -32,6 +34,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   List<LinkRequest> _linkRequests = [];
   List<Transaction> _allTransactions = [];
   late TabController _tabController;
+  StreamSubscription<Map<String, dynamic>>? _wsSubscription;
 
   // Caching variables
   DateTime? _lastTransactionLoad;
@@ -52,6 +55,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
       }
     });
     _searchController.addListener(_filterLinks);
+    _setupWebSocketListener();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
     });
@@ -73,10 +77,32 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
 
   @override
   void dispose() {
+    _wsSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Setup WebSocket listener for real-time updates
+  void _setupWebSocketListener() {
+    final ws = WebSocketService();
+    _wsSubscription = ws.messages?.listen((message) {
+      final event = message['event'];
+      print('Merchant Dashboard: Received WebSocket event - $event');
+
+      switch (event) {
+        case 'payment_received':
+        case 'balance_added':
+          // Reload data when payment is received
+          _invalidateCaches();
+          _loadData();
+          if (_tabController.index == 2) {
+            _loadAllTransactionsIfNeeded();
+          }
+          break;
+      }
+    });
   }
 
   void _filterLinks() {

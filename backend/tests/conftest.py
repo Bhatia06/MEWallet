@@ -8,8 +8,8 @@ import random
 os.environ["TESTING"] = "True"
 
 from main import app
-from database import get_supabase_client
-from utils import hash_password
+from core.database import get_supabase_client
+from core.utils import hash_password
 from faker import Faker
 
 fake = Faker('en_IN')

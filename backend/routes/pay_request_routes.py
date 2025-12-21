@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from database import get_supabase_client
-from auth_middleware import verify_token
+from core.database import get_supabase_client
+from middleware.auth_middleware import verify_token
+from core.websocket_manager import manager
 import bcrypt
 
 router = APIRouter()
@@ -69,6 +70,19 @@ async def create_pay_request(
         
         if not pay_req_result.data:
             raise HTTPException(status_code=500, detail="Failed to create pay request")
+        
+        # Broadcast to user via WebSocket if connected
+        if manager.is_user_connected(request.user_id):
+            await manager.broadcast_payment_request_to_user(
+                request.user_id,
+                {
+                    "request_id": pay_req_result.data[0]["id"],
+                    "merchant_id": request.merchant_id,
+                    "amount": request.amount,
+                    "description": request.description,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
         
         return {
             "message": "Pay request sent successfully",
@@ -255,6 +269,18 @@ async def accept_pay_request(
             "transaction_type": "purchase",
             "store_name": link["store_name"]
         }).execute()
+        
+        # Broadcast to merchant via WebSocket if connected
+        if manager.is_merchant_connected(pay_req["merchant_id"]):
+            await manager.broadcast_payment_to_merchant(
+                pay_req["merchant_id"],
+                {
+                    "user_id": pay_req["user_id"],
+                    "amount": pay_req["amount"],
+                    "remaining_balance": new_balance,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
         
         return {
             "message": "Payment successful",

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pinput/pinput.dart';
@@ -7,6 +8,7 @@ import '../providers/theme_provider.dart';
 import '../utils/theme.dart';
 import '../utils/auth_error_handler.dart';
 import '../models/models.dart';
+import '../services/websocket_service.dart';
 import 'home_screen.dart';
 import 'link_merchant_screen.dart';
 import 'request_balance_screen.dart';
@@ -33,6 +35,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
   bool _isLoadingTransactions = false;
   bool _isLoadingPayRequests = false;
   late TabController _tabController;
+  StreamSubscription<Map<String, dynamic>>? _wsSubscription;
 
   // Caching variables
   DateTime? _lastTransactionLoad;
@@ -54,6 +57,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
       }
     });
     _searchController.addListener(_filterLinks);
+    _setupWebSocketListener();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Load transactions first so sorting works properly
       await _loadTransactions();
@@ -75,10 +79,41 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
 
   @override
   void dispose() {
+    _wsSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Setup WebSocket listener for real-time updates
+  void _setupWebSocketListener() {
+    final ws = WebSocketService();
+    _wsSubscription = ws.messages?.listen((message) {
+      final event = message['event'];
+      print('User Dashboard: Received WebSocket event - $event');
+
+      switch (event) {
+        case 'payment_requested':
+          // Reload pay requests when new request arrives
+          _loadPayRequests();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('New payment request received!'),
+                backgroundColor: AppTheme.primaryColor,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+          break;
+        case 'balance_updated':
+          // Reload data when balance is updated
+          _invalidateCaches();
+          _loadData();
+          break;
+      }
+    });
   }
 
   void _filterLinks() {
