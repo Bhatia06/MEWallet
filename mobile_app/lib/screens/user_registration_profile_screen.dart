@@ -27,16 +27,174 @@ class _UserRegistrationProfileScreenState
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
   final _pinController = TextEditingController();
+  final _otpController = TextEditingController();
+
+  bool _otpSent = false;
+  bool _otpVerified = false;
+  bool _isSendingOTP = false;
+  int _resendTimer = 0;
 
   @override
   void dispose() {
     _phoneController.dispose();
     _pinController.dispose();
+    _otpController.dispose();
     super.dispose();
+  }
+
+  Future<void> _sendOTP() async {
+    if (_phoneController.text.trim().isEmpty ||
+        _phoneController.text.trim().length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid phone number'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSendingOTP = true);
+
+    try {
+      // First check if phone number already exists
+      final checkResult = await ApiService().checkPhoneExists(
+        phone: _phoneController.text.trim(),
+      );
+
+      if (mounted && checkResult['exists'] == true) {
+        setState(() => _isSendingOTP = false);
+
+        // Show dialog asking to login
+        final shouldLogin = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Phone Number Exists'),
+            content: Text(
+              checkResult['message'] ??
+                  'This phone number is already registered. Would you like to login instead?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                ),
+                child: const Text('Login'),
+              ),
+            ],
+          ),
+        );
+
+        if (shouldLogin == true && mounted) {
+          // Navigate to login page based on user type
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            checkResult['user_type'] == 'merchant'
+                ? '/merchant-login'
+                : '/user-login',
+            (route) => false,
+          );
+        }
+        return;
+      }
+
+      // Phone doesn't exist, proceed with OTP
+      await ApiService().sendOTP(phone: _phoneController.text.trim());
+
+      if (mounted) {
+        setState(() {
+          _otpSent = true;
+          _resendTimer = 60;
+        });
+
+        // Start countdown timer
+        Future.doWhile(() async {
+          await Future.delayed(const Duration(seconds: 1));
+          if (mounted && _resendTimer > 0) {
+            setState(() => _resendTimer--);
+            return true;
+          }
+          return false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('OTP sent to your phone number'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingOTP = false);
+      }
+    }
+  }
+
+  Future<void> _verifyOTP() async {
+    if (_otpController.text.trim().length != 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a 6-digit OTP'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    try {
+      await ApiService().verifyOTP(
+        phone: _phoneController.text.trim(),
+        otp: _otpController.text.trim(),
+      );
+
+      if (mounted) {
+        setState(() => _otpVerified = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Phone number verified successfully!'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleComplete() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (!_otpVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please verify your phone number with OTP'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
 
     if (_pinController.text.length != 4) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -185,24 +343,98 @@ class _UserRegistrationProfileScreenState
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 40),
-                  TextFormField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      prefixIcon: Icon(Icons.phone),
-                      hintText: '1234567890',
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) {
-                        return 'Phone number is required';
-                      }
-                      if (v.length < 10) {
-                        return 'Phone number must be at least 10 digits';
-                      }
-                      return null;
-                    },
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          enabled: !_otpVerified,
+                          decoration: InputDecoration(
+                            labelText: 'Phone Number',
+                            prefixIcon: const Icon(Icons.phone),
+                            hintText: '1234567890',
+                            suffixIcon: _otpVerified
+                                ? const Icon(Icons.check_circle,
+                                    color: AppTheme.successColor)
+                                : null,
+                          ),
+                          validator: (v) {
+                            if (v == null || v.isEmpty) {
+                              return 'Phone number is required';
+                            }
+                            if (v.length < 10) {
+                              return 'Phone number must be at least 10 digits';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: _otpVerified || _isSendingOTP
+                            ? null
+                            : (_otpSent && _resendTimer > 0 ? null : _sendOTP),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 18),
+                        ),
+                        child: _isSendingOTP
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                _otpSent
+                                    ? (_resendTimer > 0
+                                        ? 'Resend ($_resendTimer)'
+                                        : 'Resend')
+                                    : 'Send OTP',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                      ),
+                    ],
                   ),
+                  if (_otpSent && !_otpVerified) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'Enter 6-Digit OTP',
+                      style: AppTheme.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? const Color(0xFFF5F5DC)
+                            : AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Pinput(
+                      controller: _otpController,
+                      length: 6,
+                      defaultPinTheme: defaultPinTheme,
+                      focusedPinTheme: defaultPinTheme.copyWith(
+                        decoration: defaultPinTheme.decoration!.copyWith(
+                          border: Border.all(
+                              color: AppTheme.primaryColor, width: 2),
+                        ),
+                      ),
+                      onCompleted: (_) => _verifyOTP(),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'OTP sent to your phone number',
+                      style: TextStyle(
+                        color: AppTheme.successColor,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                   const SizedBox(height: 30),
                   Text(
                     'Create 4-Digit PIN',

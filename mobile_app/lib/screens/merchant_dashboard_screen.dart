@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../utils/theme.dart';
 import '../utils/auth_error_handler.dart';
 import '../models/models.dart';
+import '../services/tts_service.dart';
 import 'home_screen.dart';
 import 'add_user_screen.dart';
 import 'transaction_detail_screen.dart';
@@ -274,7 +275,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                     onRefresh: _loadData,
                     child: SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        top: 16,
+                        bottom: MediaQuery.of(context).padding.bottom + 16,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -660,7 +666,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     }
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).padding.bottom + 16,
+      ),
       children: [
         ..._linkRequests.map((request) => _buildLinkRequestCard(request)),
         ..._balanceRequests.map((request) => _buildBalanceRequestCard(request)),
@@ -1029,48 +1040,65 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   Widget _buildTransactionsTab() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (_allTransactions.isEmpty) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.receipt_long_outlined,
-                    size: 80, color: Colors.grey[300]),
-                const SizedBox(height: 16),
-                Text(
-                  'No transactions yet',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'All your transactions will appear here',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[500],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _allTransactions.length,
-      itemBuilder: (context, index) {
-        final transaction = _allTransactions[index];
-        return _buildTransactionCard(transaction, isDark);
+    return RefreshIndicator(
+      onRefresh: () async {
+        _lastTransactionLoad = null;
+        await _loadAllTransactions();
       },
+      child: _allTransactions.isEmpty
+          ? SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.receipt_long_outlined,
+                            size: 80, color: Colors.grey[300]),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No transactions yet',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: isDark
+                                ? const Color(0xFFE5E5CC)
+                                : Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Pull down to refresh',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark
+                                ? const Color(0xFFE5E5CC)
+                                : Colors.grey[500],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 16,
+              ),
+              itemCount: _allTransactions.length,
+              itemBuilder: (context, index) {
+                final transaction = _allTransactions[index];
+                return _buildTransactionCard(transaction, isDark);
+              },
+            ),
     );
   }
 
@@ -1222,7 +1250,10 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                     ),
                   );
                   if (result == true) {
-                    _loadData();
+                    _lastUserLoad = null;
+                    _lastTransactionLoad = null;
+                    await _loadData();
+                    await _loadAllTransactions();
                   }
                 },
                 style: ElevatedButton.styleFrom(
@@ -1409,8 +1440,16 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                   _lastUserLoad = null;
                   _lastTransactionLoad = null;
                   await _loadData();
+                  await _loadAllTransactions();
 
                   if (mounted) {
+                    // Play voice notification
+                    TtsService().announceBalanceAdded(
+                      amount: amount,
+                      merchantName: authProvider.userName ?? 'Merchant',
+                      userType: 'user',
+                    );
+
                     scaffoldMessenger.showSnackBar(
                       SnackBar(
                         content: Text(

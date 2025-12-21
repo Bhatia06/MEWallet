@@ -746,4 +746,49 @@ class ApiService {
         },
         token: token);
   }
+
+  // OTP Methods
+  Future<Map<String, dynamic>> sendOTP({
+    required String phone,
+  }) async {
+    return await _makeRequest('POST', '/otp/send', body: {
+      'phone': phone,
+    });
+  }
+
+  Future<Map<String, dynamic>> verifyOTP({
+    required String phone,
+    required String otp,
+  }) async {
+    return await _makeRequest('POST', '/otp/verify', body: {
+      'phone': phone,
+      'otp': otp,
+    });
+  }
+
+  Future<Map<String, dynamic>> resendOTP({
+    required String phone,
+  }) async {
+    return await _makeRequest('POST', '/otp/resend', body: {
+      'phone': phone,
+    });
+  }
+
+  // Check if phone number exists
+  Future<Map<String, dynamic>> checkPhoneExists({
+    required String phone,
+  }) async {
+    return await _makeRequest('POST', '/check/phone-exists', body: {
+      'phone': phone,
+    });
+  }
+
+  // Check if email exists (for OAuth)
+  Future<Map<String, dynamic>> checkEmailExists({
+    required String email,
+  }) async {
+    return await _makeRequest('POST', '/check/email-exists', body: {
+      'email': email,
+    });
+  }
 }

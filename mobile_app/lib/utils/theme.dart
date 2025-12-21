@@ -42,6 +42,7 @@ class AppTheme {
   // Theme Data
   static ThemeData get lightTheme {
     return ThemeData(
+      useMaterial3: true,
       primaryColor: primaryColor,
       scaffoldBackgroundColor: backgroundColor,
       colorScheme: ColorScheme.fromSeed(
@@ -109,6 +110,7 @@ class AppTheme {
   // Dark Theme
   static ThemeData get darkTheme {
     return ThemeData(
+      useMaterial3: true,
       brightness: Brightness.dark,
       primaryColor: primaryColor,
       scaffoldBackgroundColor: const Color(0xFF1a1d29), // Dark blue-grey

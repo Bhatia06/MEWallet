@@ -4,6 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/api_service.dart';
+import '../services/tts_service.dart';
 import '../utils/theme.dart';
 import 'home_screen.dart';
 
@@ -24,11 +25,13 @@ class _MerchantSettingsScreenState extends State<MerchantSettingsScreen> {
   bool _isSaving = false;
   String? _googleEmail;
   bool _hasPassword = false;
+  bool _voiceNotificationsEnabled = true;
 
   @override
   void initState() {
     super.initState();
     _loadMerchantProfile();
+    _loadVoiceNotificationSetting();
   }
 
   @override
@@ -65,10 +68,13 @@ class _MerchantSettingsScreenState extends State<MerchantSettingsScreen> {
               (googleEmail != null && googleEmail.toString().isNotEmpty)
                   ? googleEmail.toString()
                   : null;
+
+          _hasPassword = profile['has_password'] ?? false;
           _isLoading = false;
         });
         print('Phone controller text: ${_phoneController.text}');
         print('Google email state: $_googleEmail');
+        print('Has password: $_hasPassword');
       }
     } catch (e) {
       if (mounted) {
@@ -77,6 +83,32 @@ class _MerchantSettingsScreenState extends State<MerchantSettingsScreen> {
           SnackBar(content: Text('Error loading profile: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _loadVoiceNotificationSetting() async {
+    final enabled = await TtsService().isVoiceNotificationEnabled('merchant');
+    if (mounted) {
+      setState(() => _voiceNotificationsEnabled = enabled);
+    }
+  }
+
+  Future<void> _toggleVoiceNotifications(bool value) async {
+    await TtsService().setVoiceNotificationEnabled('merchant', value);
+    setState(() => _voiceNotificationsEnabled = value);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? 'Voice notifications enabled'
+                : 'Voice notifications disabled',
+          ),
+          backgroundColor: AppTheme.successColor,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -238,42 +270,44 @@ class _MerchantSettingsScreenState extends State<MerchantSettingsScreen> {
             color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Set a password to login with your phone number',
-              style: TextStyle(
-                color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: 'Password',
-                hintText: 'At least 6 characters',
-                prefixIcon: const Icon(Icons.lock),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Set a password to login with your phone number',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+                  fontSize: 13,
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: confirmPasswordController,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: 'Confirm Password',
-                prefixIcon: const Icon(Icons.lock_outline),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  hintText: 'At least 6 characters',
+                  prefixIcon: const Icon(Icons.lock),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmPasswordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Confirm Password',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -741,6 +775,35 @@ class _MerchantSettingsScreenState extends State<MerchantSettingsScreen> {
                           ),
                         );
                       },
+                    ),
+
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
+
+                    // Notifications Section
+                    Text(
+                      'Notifications',
+                      style: AppTheme.headingMedium.copyWith(
+                        color: isDark
+                            ? const Color(0xFFF5F5DC)
+                            : AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    SwitchListTile(
+                      title: const Text('Voice Notifications'),
+                      subtitle: const Text('Hear payment and balance updates'),
+                      value: _voiceNotificationsEnabled,
+                      onChanged: _toggleVoiceNotifications,
+                      secondary: const Icon(Icons.record_voice_over),
+                      tileColor: isDark
+                          ? const Color(0xFF2A2A2A)
+                          : const Color(0xFFF5F5F5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
 
                     const SizedBox(height: 32),

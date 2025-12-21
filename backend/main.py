@@ -12,6 +12,8 @@ from transaction_routes import router as transaction_router
 from balance_request_routes import router as balance_request_router
 from link_request_routes import router as link_request_router
 from oauth_routes import router as oauth_router
+from otp_routes import router as otp_router
+from check_routes import router as check_router
 from routes.pay_request_routes import router as pay_request_router
 from database import test_connection
 import uvicorn
@@ -158,6 +160,8 @@ app.include_router(transaction_router)
 app.include_router(balance_request_router)
 app.include_router(link_request_router)
 app.include_router(oauth_router)
+app.include_router(otp_router)
+app.include_router(check_router)
 app.include_router(pay_request_router)
 
 

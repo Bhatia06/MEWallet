@@ -35,6 +35,9 @@ dependencies:
   # UI Helpers
   flutter_spinkit: ^5.2.0
   intl: ^0.18.1
+  
+  # Text-to-Speech
+  flutter_tts: ^4.0.2
 
 dev_dependencies:
   flutter_test:

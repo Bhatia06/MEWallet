@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../services/api_service.dart';
 import '../utils/theme.dart';
 import 'user_dashboard_screen.dart';
+import 'merchant_dashboard_screen.dart';
 import 'user_oauth_profile_screen.dart';
 import 'user_registration_profile_screen.dart';
 
@@ -166,7 +167,30 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
                               final result = await authProvider
                                   .signInWithGoogle(userType: 'user');
                               if (mounted) {
-                                if (result['needs_profile'] == true) {
+                                // Check if account already exists
+                                if (result['existing_account'] == true) {
+                                  // Show message and navigate to dashboard
+                                  final userType = result['user_type'];
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Account already exists as ${userType == 'merchant' ? 'Merchant' : 'User'}. Logging you in...',
+                                      ),
+                                      backgroundColor: AppTheme.successColor,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+
+                                  // Navigate to appropriate dashboard
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => userType == 'merchant'
+                                          ? const MerchantDashboardScreen()
+                                          : const UserDashboardScreen(),
+                                    ),
+                                  );
+                                } else if (result['needs_profile'] == true) {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(

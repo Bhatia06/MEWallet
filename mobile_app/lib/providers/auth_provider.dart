@@ -186,6 +186,36 @@ class AuthProvider with ChangeNotifier {
         throw ApiException('Failed to get Google ID token');
       }
 
+      // First check if email already exists in the database
+      final String googleEmail = googleUser.email;
+      final emailCheck = await _apiService.checkEmailExists(email: googleEmail);
+
+      if (emailCheck['exists'] == true) {
+        // Email exists, perform login instead of registration
+        final response = await _apiService.loginWithGoogle(
+          idToken: googleAuth.idToken!,
+          userType: emailCheck['user_type'], // Use the registered user type
+        );
+
+        // Save and login directly
+        await _saveAuthData(
+          id: response.id,
+          name: response.name,
+          token: response.accessToken,
+          userType: emailCheck['user_type'],
+        );
+
+        _isAuthenticated = true;
+        notifyListeners();
+
+        return {
+          'needs_profile': false,
+          'existing_account': true,
+          'user_type': emailCheck['user_type'],
+        };
+      }
+
+      // Email doesn't exist, proceed with normal registration flow
       // Send to backend for verification
       final response = await _apiService.loginWithGoogle(
         idToken: googleAuth.idToken!,

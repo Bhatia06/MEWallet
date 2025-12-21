@@ -4,6 +4,7 @@ import 'package:pinput/pinput.dart';
 import '../providers/auth_provider.dart';
 import '../providers/wallet_provider.dart';
 import '../services/api_service.dart';
+import '../services/tts_service.dart';
 import '../utils/theme.dart';
 import '../models/models.dart';
 
@@ -142,6 +143,13 @@ class _AcceptPayRequestScreenState extends State<AcceptPayRequestScreen> {
       );
 
       if (mounted) {
+        // Play voice notification
+        TtsService().announcePaymentMade(
+          amount: widget.payRequest.amount,
+          merchantName: widget.payRequest.storeName ?? 'Merchant',
+          userType: 'user',
+        );
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Payment successful!'),

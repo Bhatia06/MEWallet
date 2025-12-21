@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:pinput/pinput.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/api_service.dart';
 import '../utils/theme.dart';
 import 'merchant_dashboard_screen.dart';
+import 'user_dashboard_screen.dart';
 import 'merchant_oauth_profile_screen.dart';
 
 class MerchantRegisterScreen extends StatefulWidget {
@@ -21,8 +23,14 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _otpController = TextEditingController();
+
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _otpSent = false;
+  bool _otpVerified = false;
+  bool _isSendingOTP = false;
+  int _resendTimer = 0;
 
   @override
   void dispose() {
@@ -30,11 +38,163 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
     _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _otpController.dispose();
     super.dispose();
+  }
+
+  Future<void> _sendOTP() async {
+    if (_phoneController.text.trim().isEmpty ||
+        _phoneController.text.trim().length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid phone number'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSendingOTP = true);
+
+    try {
+      // First check if phone number already exists
+      final checkResult = await ApiService().checkPhoneExists(
+        phone: _phoneController.text.trim(),
+      );
+
+      if (mounted && checkResult['exists'] == true) {
+        setState(() => _isSendingOTP = false);
+
+        // Show dialog asking to login
+        final shouldLogin = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Phone Number Exists'),
+            content: Text(
+              checkResult['message'] ??
+                  'This phone number is already registered. Would you like to login instead?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                ),
+                child: const Text('Login'),
+              ),
+            ],
+          ),
+        );
+
+        if (shouldLogin == true && mounted) {
+          // Navigate to login page based on user type
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            checkResult['user_type'] == 'merchant'
+                ? '/merchant-login'
+                : '/user-login',
+            (route) => false,
+          );
+        }
+        return;
+      }
+
+      // Phone doesn't exist, proceed with OTP
+      await ApiService().sendOTP(phone: _phoneController.text.trim());
+
+      if (mounted) {
+        setState(() {
+          _otpSent = true;
+          _resendTimer = 60;
+        });
+
+        // Start countdown timer
+        Future.doWhile(() async {
+          await Future.delayed(const Duration(seconds: 1));
+          if (mounted && _resendTimer > 0) {
+            setState(() => _resendTimer--);
+            return true;
+          }
+          return false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('OTP sent to your phone number'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingOTP = false);
+      }
+    }
+  }
+
+  Future<void> _verifyOTP() async {
+    if (_otpController.text.trim().length != 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a 6-digit OTP'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    try {
+      await ApiService().verifyOTP(
+        phone: _phoneController.text.trim(),
+        otp: _otpController.text.trim(),
+      );
+
+      if (mounted) {
+        setState(() => _otpVerified = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Phone number verified successfully!'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (!_otpVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please verify your phone number with OTP'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
 
     final authProvider = context.read<AuthProvider>();
 
@@ -46,6 +206,17 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
       );
 
       if (mounted) {
+        // Show welcome message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Welcome ${_storeNameController.text.trim()}! Please complete your profile in settings page.',
+            ),
+            backgroundColor: AppTheme.successColor,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MerchantDashboardScreen()),
@@ -63,6 +234,23 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final defaultPinTheme = PinTheme(
+      width: 56,
+      height: 56,
+      textStyle: const TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDark ? const Color(0xFF4A4A4A) : const Color(0xFFE0E0E0),
+        ),
+      ),
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Merchant Registration'),
@@ -111,19 +299,96 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
                         : null,
                   ),
                   const SizedBox(height: 20),
-                  TextFormField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                        labelText: 'Phone Number',
-                        prefixIcon: Icon(Icons.phone)),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return 'Phone is required';
-                      if (v.length != 10 || !RegExp(r'^\d{10}$').hasMatch(v))
-                        return 'Enter valid 10-digit number';
-                      return null;
-                    },
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          enabled: !_otpVerified,
+                          decoration: InputDecoration(
+                            labelText: 'Phone Number',
+                            prefixIcon: const Icon(Icons.phone),
+                            suffixIcon: _otpVerified
+                                ? const Icon(Icons.check_circle,
+                                    color: AppTheme.successColor)
+                                : null,
+                          ),
+                          validator: (v) {
+                            if (v == null || v.isEmpty)
+                              return 'Phone is required';
+                            if (v.length != 10 ||
+                                !RegExp(r'^\d{10}$').hasMatch(v))
+                              return 'Enter valid 10-digit number';
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: _otpVerified || _isSendingOTP
+                            ? null
+                            : (_otpSent && _resendTimer > 0 ? null : _sendOTP),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 18),
+                        ),
+                        child: _isSendingOTP
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                _otpSent
+                                    ? (_resendTimer > 0
+                                        ? 'Resend ($_resendTimer)'
+                                        : 'Resend')
+                                    : 'Send OTP',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                      ),
+                    ],
                   ),
+                  if (_otpSent && !_otpVerified) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'Enter 6-Digit OTP',
+                      style: AppTheme.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? const Color(0xFFF5F5DC)
+                            : AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Pinput(
+                      controller: _otpController,
+                      length: 6,
+                      defaultPinTheme: defaultPinTheme,
+                      focusedPinTheme: defaultPinTheme.copyWith(
+                        decoration: defaultPinTheme.decoration!.copyWith(
+                          border: Border.all(
+                              color: AppTheme.primaryColor, width: 2),
+                        ),
+                      ),
+                      onCompleted: (_) => _verifyOTP(),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'OTP sent to your phone number',
+                      style: TextStyle(
+                        color: AppTheme.successColor,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: _passwordController,
@@ -196,7 +461,30 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
                               final result = await authProvider
                                   .signInWithGoogle(userType: 'merchant');
                               if (mounted) {
-                                if (result['needs_profile'] == true) {
+                                // Check if account already exists
+                                if (result['existing_account'] == true) {
+                                  // Show message and navigate to dashboard
+                                  final userType = result['user_type'];
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Account already exists as ${userType == 'merchant' ? 'Merchant' : 'User'}. Logging you in...',
+                                      ),
+                                      backgroundColor: AppTheme.successColor,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+
+                                  // Navigate to appropriate dashboard
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => userType == 'merchant'
+                                          ? const MerchantDashboardScreen()
+                                          : const UserDashboardScreen(),
+                                    ),
+                                  );
+                                } else if (result['needs_profile'] == true) {
                                   // Navigate to profile completion screen
                                   Navigator.push(
                                     context,
@@ -207,7 +495,6 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
                                         ownerName: result['owner_name'],
                                         googleEmail: result['google_email'],
                                         token: result['token'],
-                                        
                                       ),
                                     ),
                                   );

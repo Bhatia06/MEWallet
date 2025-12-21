@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/wallet_provider.dart';
 import '../utils/theme.dart';
+import '../services/tts_service.dart';
 import '../models/models.dart';
 
 class MerchantDeductBalanceScreen extends StatefulWidget {
@@ -173,6 +174,13 @@ class _MerchantDeductBalanceScreenState
       );
 
       if (mounted) {
+        // Play voice notification
+        TtsService().announcePaymentReceived(
+          amount: amount,
+          userName: widget.link.userName ?? 'User',
+          userType: 'merchant',
+        );
+
         Navigator.pop(context, true); // Return true to indicate success
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

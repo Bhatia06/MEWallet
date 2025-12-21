@@ -71,6 +71,17 @@ class _MerchantOAuthProfileScreenState
       );
 
       if (mounted) {
+        // Show welcome message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Welcome ${_storeNameController.text.trim()}! Please complete your profile in settings page.',
+            ),
+            backgroundColor: AppTheme.successColor,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MerchantDashboardScreen()),
