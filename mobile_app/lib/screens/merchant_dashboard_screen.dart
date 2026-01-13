@@ -1803,14 +1803,30 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
 
                       print('Reminder creation response: $response');
 
-                      scaffoldMessenger.showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Reminder set for ${link.userName} on ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} at ${selectedTime.format(context)}',
+                      // Check if response is successful (handle null values gracefully)
+                      if (response != null &&
+                          (response['message'] != null ||
+                              response['reminder'] != null)) {
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Reminder set successfully for ${link.userName} on ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} at ${selectedTime.format(context)}',
+                            ),
+                            backgroundColor: AppTheme.successColor,
+                            duration: const Duration(seconds: 3),
                           ),
-                          backgroundColor: AppTheme.successColor,
-                        ),
-                      );
+                        );
+                      } else {
+                        // Response exists but might have unexpected format
+                        scaffoldMessenger.showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Reminder created (check notifications tab)'),
+                            backgroundColor: AppTheme.successColor,
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      }
                     } catch (e) {
                       print('Error creating reminder: $e');
                       scaffoldMessenger.showSnackBar(

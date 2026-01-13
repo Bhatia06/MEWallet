@@ -9,7 +9,6 @@ import '../utils/theme.dart';
 import '../utils/auth_error_handler.dart';
 import '../models/models.dart';
 import '../services/websocket_service.dart';
-import '../services/notification_service.dart';
 import 'home_screen.dart';
 import 'link_merchant_screen.dart';
 import 'request_balance_screen.dart';
@@ -67,18 +66,11 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
     _searchController.addListener(_debouncedFilterLinks);
     _setupWebSocketListener();
 
-    // Request notification permission on startup
-    NotificationService().requestPermission();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Load merchants and transactions in parallel
-      await Future.wait([
-        _loadData().catchError((e) => print('Error loading merchants: $e')),
-        _loadTransactions()
-            .catchError((e) => print('Error loading transactions: $e')),
-        _loadNotifications()
-            .catchError((e) => print('Error loading notifications: $e')),
-      ]);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Load data asynchronously without blocking UI
+      _loadData().catchError((e) => print('Error loading merchants: $e'));
+      _loadTransactions()
+          .catchError((e) => print('Error loading transactions: $e'));
     });
   }
 
@@ -137,15 +129,6 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
 
           final data = message['data'];
           final storeName = data['store_name'] ?? 'Store';
-          final reminderMessage =
-              data['message'] ?? 'Please check notifications';
-
-          // Show browser notification
-          NotificationService().showReminderNotification(
-            storeName: storeName,
-            message: reminderMessage,
-            balance: (data['balance'] ?? 0).toDouble(),
-          );
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -187,24 +170,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
   }
 
   void _filterLinks() {
-    setState(() {
-      final query = _searchController.text.toLowerCase();
-      final walletProvider = context.read<WalletProvider>();
-      List<MerchantUserLink> links;
-
-      if (query.isEmpty) {
-        links = List.from(walletProvider.links);
-      } else {
-        links = walletProvider.links.where((link) {
-          final storeName = link.storeName?.toLowerCase() ?? '';
-          final merchantId = link.merchantId.toLowerCase();
-          return storeName.contains(query) || merchantId.contains(query);
-        }).toList();
-      }
-
-      // Sort by most recent transaction
-      _filteredLinks = _sortMerchantsByRecentTransaction(links);
-    });
+    _applySorting();
   }
 
   List<MerchantUserLink> _sortMerchantsByRecentTransaction(
@@ -279,19 +245,44 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
         print(
             'USER DASHBOARD: Fetched ${walletProvider.links.length} merchant links');
         _lastMerchantLoad = DateTime.now();
-        // Force UI update with sorted links
+        // Show merchants immediately without sorting
         if (mounted) {
           setState(() {
-            _filteredLinks = _sortMerchantsByRecentTransaction(
-                List.from(walletProvider.links));
+            _filteredLinks = List.from(walletProvider.links);
             print(
-                'USER DASHBOARD: Sorted and filtered ${_filteredLinks.length} links');
+                'USER DASHBOARD: Displayed ${_filteredLinks.length} links (sorting deferred)');
           });
+          // Sort in next frame if transactions are available
+          if (_allTransactions.isNotEmpty) {
+            _applySorting();
+          }
         }
       });
     } else {
       print('USER DASHBOARD: No auth credentials for loading data');
     }
+  }
+
+  // Apply sorting without blocking - called after transactions load
+  void _applySorting() {
+    if (!mounted) return;
+    final walletProvider = context.read<WalletProvider>();
+    final query = _searchController.text.toLowerCase();
+
+    List<MerchantUserLink> links;
+    if (query.isEmpty) {
+      links = List.from(walletProvider.links);
+    } else {
+      links = walletProvider.links.where((link) {
+        final storeName = link.storeName?.toLowerCase() ?? '';
+        final merchantId = link.merchantId.toLowerCase();
+        return storeName.contains(query) || merchantId.contains(query);
+      }).toList();
+    }
+
+    setState(() {
+      _filteredLinks = _sortMerchantsByRecentTransaction(links);
+    });
   }
 
   // Smart loading methods
@@ -344,8 +335,10 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
           setState(() {
             _allTransactions = transactions;
             _lastTransactionLoad = DateTime.now();
-            // Re-sort merchants after transactions are loaded
-            _filterLinks();
+            // Apply sorting now that transactions are available
+            if (_filteredLinks.isNotEmpty) {
+              _applySorting();
+            }
           });
         }
       });

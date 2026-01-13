@@ -1,6 +1,6 @@
 class AppConfig {
   // API Configuration - Production HTTPS URL
-  static const String baseUrl = 'http://10.68.11.50:8000';
+  static const String baseUrl = 'http://10.19.55.70:8000';
 
   static const String apiVersion = 'v1';
 

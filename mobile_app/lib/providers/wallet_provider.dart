@@ -38,14 +38,30 @@ class WalletProvider with ChangeNotifier {
     _error = null;
 
     try {
-      _links = await _apiService.getLinkedMerchants(userId, token);
-      notifyListeners();
+      final newLinks = await _apiService.getLinkedMerchants(userId, token);
+      // Only notify if data actually changed
+      if (_links.length != newLinks.length || 
+          !_listsEqual(_links, newLinks)) {
+        _links = newLinks;
+        notifyListeners();
+      } else {
+        _links = newLinks;
+      }
     } catch (e) {
       _error = e.toString();
       notifyListeners();
     } finally {
       _setLoading(false);
     }
+  }
+  
+  // Helper to compare link lists
+  bool _listsEqual(List<MerchantUserLink> a, List<MerchantUserLink> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].linkId != b[i].linkId) return false;
+    }
+    return true;
   }
 
   Future<void> createLink({
