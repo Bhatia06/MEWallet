@@ -49,7 +49,7 @@ class TtsService {
   // Check if voice notifications are enabled for user
   Future<bool> isVoiceNotificationEnabled(String userType) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('voice_notification_${userType}') ??
+    return prefs.getBool('voice_notification_$userType') ??
         true; // Default enabled
   }
 
@@ -57,7 +57,7 @@ class TtsService {
   Future<void> setVoiceNotificationEnabled(
       String userType, bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('voice_notification_${userType}', enabled);
+    await prefs.setBool('voice_notification_$userType', enabled);
   }
 
   // Announce payment received (for merchants)

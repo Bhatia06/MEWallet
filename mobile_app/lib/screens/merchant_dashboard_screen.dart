@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../utils/theme.dart';
 import '../utils/auth_error_handler.dart';
 import '../models/models.dart';
@@ -36,11 +35,14 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   late TabController _tabController;
   StreamSubscription<Map<String, dynamic>>? _wsSubscription;
 
-  // Caching variables
+  // Caching variables - increased for better performance
   DateTime? _lastTransactionLoad;
   DateTime? _lastRequestLoad;
   DateTime? _lastUserLoad;
-  static const _cacheDuration = Duration(minutes: 2);
+  static const _cacheDuration = Duration(minutes: 5);
+
+  // Debounce timer for search
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -54,10 +56,15 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
         _loadAllTransactionsIfNeeded();
       }
     });
-    _searchController.addListener(_filterLinks);
+    _searchController.addListener(_debouncedFilterLinks);
     _setupWebSocketListener();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
+      // Preload users and requests in parallel
+      Future.wait([
+        _loadData().catchError((e) => print('Error loading users: $e')),
+        _loadBalanceRequestsIfNeeded()
+            .catchError((e) => print('Error loading requests: $e')),
+      ]);
     });
   }
 
@@ -78,6 +85,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
   @override
   void dispose() {
     _wsSubscription?.cancel();
+    _searchDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
@@ -89,6 +97,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     final ws = WebSocketService();
     _wsSubscription = ws.messages?.listen((message) {
       final event = message['event'];
+
+      // Ignore null or empty events
+      if (event == null || event.toString().isEmpty) {
+        return;
+      }
+
       print('Merchant Dashboard: Received WebSocket event - $event');
 
       switch (event) {
@@ -102,6 +116,14 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
           }
           break;
       }
+    });
+  }
+
+  // Debounced search for better performance
+  void _debouncedFilterLinks() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _filterLinks();
     });
   }
 
@@ -223,121 +245,87 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
     final authProvider = context.watch<AuthProvider>();
     final walletProvider = context.watch<WalletProvider>();
 
-    return PopScope(
-      canPop: false,
-      onPopInvoked: (didPop) async {
-        if (didPop) return;
-
-        // Show exit confirmation dialog
-        final shouldExit = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Exit App'),
-            content: const Text('Do you want to exit the app?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.errorColor,
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('Dashboard'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const MerchantSettingsScreen(),
                 ),
-                child: const Text('Exit'),
-              ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _buildHeaderCard(authProvider),
+          TabBar(
+            controller: _tabController,
+            labelColor: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFFF5F5DC)
+                : AppTheme.primaryColor,
+            unselectedLabelColor:
+                Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFFE5E5CC)
+                    : Colors.grey,
+            indicatorColor: AppTheme.primaryColor,
+            tabs: const [
+              Tab(text: 'Users', icon: Icon(Icons.people)),
+              Tab(text: 'Requests', icon: Icon(Icons.request_page)),
+              Tab(text: 'Transactions', icon: Icon(Icons.receipt_long)),
             ],
           ),
-        );
-
-        if (shouldExit == true && context.mounted) {
-          // Exit the app
-          Navigator.of(context).popUntil((route) => route.isFirst);
-          Navigator.of(context).pop();
-        }
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          title: const Text('Dashboard'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const MerchantSettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            _buildHeaderCard(authProvider),
-            TabBar(
+          Expanded(
+            child: TabBarView(
               controller: _tabController,
-              labelColor: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFFF5F5DC)
-                  : AppTheme.primaryColor,
-              unselectedLabelColor:
-                  Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFFE5E5CC)
-                      : Colors.grey,
-              indicatorColor: AppTheme.primaryColor,
-              tabs: const [
-                Tab(text: 'Users', icon: Icon(Icons.people)),
-                Tab(text: 'Requests', icon: Icon(Icons.request_page)),
-                Tab(text: 'Transactions', icon: Icon(Icons.receipt_long)),
-              ],
-            ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  RefreshIndicator(
-                    onRefresh: _loadData,
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        top: 16,
-                        bottom: MediaQuery.of(context).padding.bottom + 16,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildStatsCard(walletProvider.links),
-                          const SizedBox(height: 12),
-                          _buildSearchBar(),
-                          const SizedBox(height: 10),
-                          _buildLinkedUsersSection(walletProvider),
-                        ],
-                      ),
+              children: [
+                RefreshIndicator(
+                  onRefresh: _loadData,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      top: 16,
+                      bottom: MediaQuery.of(context).padding.bottom + 16,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildStatsCard(walletProvider.links),
+                        const SizedBox(height: 12),
+                        _buildSearchBar(),
+                        const SizedBox(height: 10),
+                        _buildLinkedUsersSection(walletProvider),
+                      ],
                     ),
                   ),
-                  RefreshIndicator(
-                    onRefresh: () async {
-                      _lastRequestLoad = null;
-                      await _loadBalanceRequests();
-                    },
-                    child: _buildRequestsTab(),
-                  ),
-                  RefreshIndicator(
-                    onRefresh: () async {
-                      _lastTransactionLoad = null;
-                      await _loadAllTransactions();
-                    },
-                    child: _buildTransactionsTab(),
-                  ),
-                ],
-              ),
+                ),
+                RefreshIndicator(
+                  onRefresh: () async {
+                    _lastRequestLoad = null;
+                    await _loadBalanceRequests();
+                  },
+                  child: _buildRequestsTab(),
+                ),
+                RefreshIndicator(
+                  onRefresh: () async {
+                    _lastTransactionLoad = null;
+                    await _loadAllTransactions();
+                  },
+                  child: _buildTransactionsTab(),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -393,12 +381,11 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                   if (result == true) _loadData();
                 },
                 borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       Icon(
                         Icons.person_add,
                         color: Colors.white,
@@ -645,6 +632,15 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                   ],
                 ),
               ),
+              if (link.balance < 0)
+                IconButton(
+                  icon: const Icon(Icons.notification_add, size: 20),
+                  color: AppTheme.primaryColor,
+                  tooltip: 'Set Reminder',
+                  onPressed: () => _showSetReminderDialog(link),
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(),
+                ),
               const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
             ],
           ),
@@ -772,7 +768,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                     ],
                   ),
                 ),
-                Icon(
+                const Icon(
                   Icons.link,
                   color: AppTheme.primaryColor,
                   size: 28,
@@ -842,7 +838,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                 color: AppTheme.primaryColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Text(
+              child: const Text(
                 'Balance request',
                 style: TextStyle(
                   fontSize: 11,
@@ -890,7 +886,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
                 ),
                 Text(
                   '₹${request.amount.toStringAsFixed(2)}',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: AppTheme.primaryColor,
@@ -1573,6 +1569,269 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
           ],
         ),
       ),
+    );
+  }
+
+  void _showSetReminderDialog(MerchantUserLink link) {
+    final messageController = TextEditingController(
+      text:
+          'Please pay your pending balance of ₹${(-link.balance).toStringAsFixed(2)}',
+    );
+    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
+    TimeOfDay selectedTime = TimeOfDay.now();
+
+    final authProvider = context.read<AuthProvider>();
+    final walletProvider = context.read<WalletProvider>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF252838) : Colors.white,
+              title: Text(
+                'Set Payment Reminder',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                ),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'User: ${link.userName}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color:
+                            isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+                      ),
+                    ),
+                    Text(
+                      'Owes: ₹${(-link.balance).toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        color: AppTheme.errorColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: messageController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Reminder Message',
+                        border: const OutlineInputBorder(),
+                        labelStyle: TextStyle(
+                          color: isDark ? const Color(0xFFE5E5CC) : null,
+                        ),
+                      ),
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Date Picker
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Reminder Date',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDark
+                              ? const Color(0xFFE5E5CC)
+                              : Colors.grey[700],
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime.now(),
+                          lastDate:
+                              DateTime.now().add(const Duration(days: 365)),
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: ColorScheme.light(
+                                  primary: AppTheme.primaryColor,
+                                ),
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            selectedDate = picked;
+                          });
+                        }
+                      },
+                    ),
+                    const Divider(),
+                    // Time Picker
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Reminder Time',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDark
+                              ? const Color(0xFFE5E5CC)
+                              : Colors.grey[700],
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${selectedTime.format(context)}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.access_time),
+                      onTap: () async {
+                        final TimeOfDay? picked = await showTimePicker(
+                          context: context,
+                          initialTime: selectedTime,
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: ColorScheme.light(
+                                  primary: AppTheme.primaryColor,
+                                ),
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            selectedTime = picked;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color:
+                          isDark ? const Color(0xFFE5E5CC) : Colors.grey[600],
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (messageController.text.trim().isEmpty) {
+                      scaffoldMessenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Please enter a reminder message'),
+                          backgroundColor: AppTheme.errorColor,
+                        ),
+                      );
+                      return;
+                    }
+
+                    // Combine date and time
+                    final reminderDateTime = DateTime(
+                      selectedDate.year,
+                      selectedDate.month,
+                      selectedDate.day,
+                      selectedTime.hour,
+                      selectedTime.minute,
+                    );
+
+                    if (reminderDateTime.isBefore(DateTime.now())) {
+                      scaffoldMessenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Reminder date must be in the future'),
+                          backgroundColor: AppTheme.errorColor,
+                        ),
+                      );
+                      return;
+                    }
+
+                    Navigator.pop(context);
+
+                    try {
+                      final token = authProvider.token;
+                      if (token == null) {
+                        throw Exception('Not authenticated');
+                      }
+
+                      // Validate link data
+                      if (link.linkId == 0 || link.userId.isEmpty) {
+                        throw Exception(
+                            'Invalid link data. Please refresh and try again.');
+                      }
+
+                      print('Creating reminder with data:');
+                      print('  userId: ${link.userId}');
+                      print('  linkId: ${link.linkId}');
+                      print('  message: ${messageController.text.trim()}');
+                      print(
+                          '  reminderDate: ${reminderDateTime.toIso8601String()}');
+
+                      final response =
+                          await walletProvider.apiService.createReminder(
+                        token: token,
+                        userId: link.userId,
+                        linkId: link.linkId,
+                        message: messageController.text.trim(),
+                        reminderDate: reminderDateTime.toIso8601String(),
+                      );
+
+                      print('Reminder creation response: $response');
+
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Reminder set for ${link.userName} on ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} at ${selectedTime.format(context)}',
+                          ),
+                          backgroundColor: AppTheme.successColor,
+                        ),
+                      );
+                    } catch (e) {
+                      print('Error creating reminder: $e');
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content:
+                              Text('Failed to set reminder: ${e.toString()}'),
+                          backgroundColor: AppTheme.errorColor,
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                  ),
+                  child: const Text('Set Reminder'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

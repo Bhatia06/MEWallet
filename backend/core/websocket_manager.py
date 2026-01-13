@@ -95,6 +95,22 @@ class ConnectionManager:
         }
         await self.send_to_merchant(merchant_id, message)
     
+    async def broadcast_reminder_to_user(self, user_id: str, reminder_data: dict):
+        """Broadcast new reminder notification to user"""
+        message = {
+            "event": "reminder_created",
+            "data": reminder_data
+        }
+        await self.send_to_user(user_id, message)
+    
+    async def broadcast_reminder_dismissed_to_user(self, user_id: str, reminder_id: int):
+        """Broadcast reminder dismissal to user"""
+        message = {
+            "event": "reminder_dismissed",
+            "data": {"reminder_id": reminder_id}
+        }
+        await self.send_to_user(user_id, message)
+    
     async def broadcast_balance_add_to_merchant(self, merchant_id: str, balance_data: dict):
         """Broadcast balance add notification to merchant"""
         message = {

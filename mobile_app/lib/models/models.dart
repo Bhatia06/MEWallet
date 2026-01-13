@@ -330,3 +330,130 @@ class PayRequest {
     };
   }
 }
+
+class Reminder {
+  final int id;
+  final String merchantId;
+  final String userId;
+  final int linkId;
+  final String message;
+  final DateTime reminderDate;
+  final String status;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final String? storeName;
+  final String? userName;
+  final double? balance;
+
+  Reminder({
+    required this.id,
+    required this.merchantId,
+    required this.userId,
+    required this.linkId,
+    required this.message,
+    required this.reminderDate,
+    required this.status,
+    this.createdAt,
+    this.updatedAt,
+    this.storeName,
+    this.userName,
+    this.balance,
+  });
+
+  factory Reminder.fromJson(Map<String, dynamic> json) {
+    return Reminder(
+      id: json['id'] ?? 0,
+      merchantId: json['merchant_id'] ?? '',
+      userId: json['user_id'] ?? '',
+      linkId: json['link_id'] ?? 0,
+      message: json['message'] ?? '',
+      reminderDate: json['reminder_date'] != null
+          ? DateTime.parse(json['reminder_date'])
+          : DateTime.now(),
+      status: json['status'] ?? 'active',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'])
+          : null,
+      storeName: json['store_name'],
+      userName: json['user_name'],
+      balance:
+          json['balance'] != null ? (json['balance'] as num).toDouble() : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'merchant_id': merchantId,
+      'user_id': userId,
+      'link_id': linkId,
+      'message': message,
+      'reminder_date': reminderDate.toIso8601String(),
+      'status': status,
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
+      'store_name': storeName,
+      'user_name': userName,
+      'balance': balance,
+    };
+  }
+}
+
+class UserNotification {
+  final int id;
+  final String merchantId;
+  final String storeName;
+  final double balance;
+  final String message;
+  final DateTime reminderDate;
+  final String status;
+  final DateTime? createdAt;
+  final String type;
+
+  UserNotification({
+    required this.id,
+    required this.merchantId,
+    required this.storeName,
+    required this.balance,
+    required this.message,
+    required this.reminderDate,
+    required this.status,
+    this.createdAt,
+    required this.type,
+  });
+
+  factory UserNotification.fromJson(Map<String, dynamic> json) {
+    return UserNotification(
+      id: json['id'] ?? 0,
+      merchantId: json['merchant_id'] ?? '',
+      storeName: json['store_name'] ?? 'Unknown Store',
+      balance: (json['balance'] as num?)?.toDouble() ?? 0.0,
+      message: json['message'] ?? '',
+      reminderDate: json['reminder_date'] != null
+          ? DateTime.parse(json['reminder_date'])
+          : DateTime.now(),
+      status: json['status'] ?? 'active',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+      type: json['type'] ?? 'payment_reminder',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'merchant_id': merchantId,
+      'store_name': storeName,
+      'balance': balance,
+      'message': message,
+      'reminder_date': reminderDate.toIso8601String(),
+      'status': status,
+      'created_at': createdAt?.toIso8601String(),
+      'type': type,
+    };
+  }
+}

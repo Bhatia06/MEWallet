@@ -101,7 +101,13 @@ async def block_browser_access(request: Request, call_next):
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your app's domain
+    allow_origins=[
+        "https://mewallet.tgenie.in",
+        "https://*.tgenie.in",
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "*",  # Allow all origins for local development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

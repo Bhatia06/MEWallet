@@ -66,7 +66,15 @@ class WebSocketService {
         (message) {
           try {
             final data = jsonDecode(message);
-            print('WebSocket: Received message - ${data['event']}');
+            final event = data['event'];
+
+            // Skip null or empty events
+            if (event == null || event.toString().isEmpty) {
+              print('WebSocket: Received message with null event - ignoring');
+              return;
+            }
+
+            print('WebSocket: Received message - $event');
             _messageController?.add(data);
 
             // Handle specific events
@@ -101,6 +109,12 @@ class WebSocketService {
   /// Handle incoming WebSocket messages
   void _handleMessage(Map<String, dynamic> data) {
     final event = data['event'];
+
+    // Skip null or empty events
+    if (event == null || event.toString().isEmpty) {
+      return;
+    }
+
     final eventData = data['data'];
 
     switch (event) {

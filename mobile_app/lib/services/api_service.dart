@@ -791,4 +791,106 @@ class ApiService {
       'email': email,
     });
   }
+
+  // Reminder APIs
+
+  // Create a reminder
+  Future<Map<String, dynamic>> createReminder({
+    required String token,
+    required String userId,
+    required int linkId,
+    required String message,
+    required String reminderDate,
+  }) async {
+    return await _makeRequest(
+      'POST',
+      '/merchant/reminders/create',
+      token: token,
+      body: {
+        'user_id': userId,
+        'link_id': linkId,
+        'message': message,
+        'reminder_date': reminderDate,
+      },
+    );
+  }
+
+  // Get merchant's reminders
+  Future<List<Reminder>> getMerchantReminders({
+    required String token,
+    required String merchantId,
+  }) async {
+    final response = await _makeRequest(
+      'GET',
+      '/merchant/reminders/$merchantId',
+      token: token,
+    );
+
+    if (response is List) {
+      return response.map((json) => Reminder.fromJson(json)).toList();
+    }
+    return [];
+  }
+
+  // Update a reminder
+  Future<Map<String, dynamic>> updateReminder({
+    required String token,
+    required int reminderId,
+    String? message,
+    String? reminderDate,
+    String? status,
+  }) async {
+    Map<String, dynamic> body = {};
+    if (message != null) body['message'] = message;
+    if (reminderDate != null) body['reminder_date'] = reminderDate;
+    if (status != null) body['status'] = status;
+
+    return await _makeRequest(
+      'PUT',
+      '/merchant/reminders/$reminderId',
+      token: token,
+      body: body,
+    );
+  }
+
+  // Delete a reminder
+  Future<Map<String, dynamic>> deleteReminder({
+    required String token,
+    required int reminderId,
+  }) async {
+    return await _makeRequest(
+      'DELETE',
+      '/merchant/reminders/$reminderId',
+      token: token,
+    );
+  }
+
+  // Get user notifications
+  Future<List<UserNotification>> getUserNotifications({
+    required String token,
+    required String userId,
+  }) async {
+    final response = await _makeRequest(
+      'GET',
+      '/user/notifications/$userId',
+      token: token,
+    );
+
+    if (response is List) {
+      return response.map((json) => UserNotification.fromJson(json)).toList();
+    }
+    return [];
+  }
+
+  // Dismiss a notification
+  Future<Map<String, dynamic>> dismissNotification({
+    required String token,
+    required int reminderId,
+  }) async {
+    return await _makeRequest(
+      'DELETE',
+      '/user/notifications/$reminderId/dismiss',
+      token: token,
+    );
+  }
 }

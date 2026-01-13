@@ -116,7 +116,7 @@ async def get_user_pay_requests(
         result = supabase.table("pay_requests")\
             .select(
                 "id, merchant_id, amount, description, status, created_at, responded_at, "
-                "merchant_user_links(store_name)"
+                "merchants(store_name)"
             )\
             .eq("user_id", user_id)\
             .order("created_at", desc=True)\
@@ -124,7 +124,7 @@ async def get_user_pay_requests(
         
         requests = []
         for r in result.data:
-            store_name = r.get("merchant_user_links", {}).get("store_name") if isinstance(r.get("merchant_user_links"), dict) else None
+            store_name = r.get("merchants", {}).get("store_name") if isinstance(r.get("merchants"), dict) else None
             requests.append({
                 "id": r["id"],
                 "merchant_id": r["merchant_id"],

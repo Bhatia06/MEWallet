@@ -316,11 +316,13 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
                                 : null,
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty)
+                            if (v == null || v.isEmpty) {
                               return 'Phone is required';
+                            }
                             if (v.length != 10 ||
-                                !RegExp(r'^\d{10}$').hasMatch(v))
+                                !RegExp(r'^\d{10}$').hasMatch(v)) {
                               return 'Enter valid 10-digit number';
+                            }
                             return null;
                           },
                         ),
@@ -406,8 +408,9 @@ class _MerchantRegisterScreenState extends State<MerchantRegisterScreen> {
                     ),
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Password is required';
-                      if (v.length < 6)
+                      if (v.length < 6) {
                         return 'Password must be at least 6 characters';
+                      }
                       return null;
                     },
                   ),

@@ -765,7 +765,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                       ),
                       child: Row(
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.info_outline,
                             color: AppTheme.warningColor,
                             size: 20,

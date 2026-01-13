@@ -667,7 +667,7 @@ class _MerchantSettingsScreenState extends State<MerchantSettingsScreen> {
                       ),
                       child: Row(
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.info_outline,
                             color: AppTheme.warningColor,
                             size: 20,

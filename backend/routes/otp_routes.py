@@ -3,16 +3,20 @@ from pydantic import BaseModel
 from core.database import get_supabase_client
 import requests
 import random
+import os
 from datetime import datetime, timedelta
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from core.config import get_settings
 
+settings = get_settings()
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/otp", tags=["OTP"])
 
-# 2Factor API Configuration
-TWOFACTOR_API_KEY = "e0979cba-1c53-11f0-8b17-0200cd936042"
+SMSINDIAHUB_API_KEY = os.getenv("SMSINDIAHUB_API_KEY")
+SMSINDIAHUB_SENDER_ID = os.getenv("SMSINDIAHUB_SENDER_ID")
+SMSINDIAHUB_GATEWAY_ID = os.getenv("SMSINDIAHUB_GATEWAY_ID")
 
 # In-memory OTP storage (for production, use Redis)
 otp_storage = {}
@@ -45,27 +49,53 @@ async def send_otp(request: Request, otp_request: SendOTPRequest):
         # Generate OTP
         otp = generate_otp()
         
-        # Send OTP via 2Factor API
-        api_url = f"https://2factor.in/API/V1/{TWOFACTOR_API_KEY}/SMS/{phone}/{otp}/OTP1"
+        # Use the exact template format from SMSINDIAHUB example
+        # Note: This template must be registered and approved in your SMSINDIAHUB account
+        message = f"Welcome to the xyz powered by SMSINDIAHUB. Your OTP for registration is {otp}"
+        
+        # Send OTP via SMSINDIAHUB API
+        api_url = "http://cloud.smsindiahub.in/vendorsms/pushsms.aspx"
+        params = {
+            "APIKey": SMSINDIAHUB_API_KEY,
+            "msisdn": phone,
+            "sid": SMSINDIAHUB_SENDER_ID,
+            "msg": message,
+            "fl": "0",
+            "gwid": SMSINDIAHUB_GATEWAY_ID
+        }
         
         try:
-            response = requests.get(api_url, timeout=10)
-            response.raise_for_status()
+            response = requests.get(api_url, params=params, timeout=10)
             
-            # Check if API request was successful
-            response_data = response.json()
-            if response_data.get("Status") != "Success":
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to send OTP"
-                )
+            # Log response for debugging
+            print(f"SMSINDIAHUB Response: {response.text}")
+            
+            # Parse JSON response
+            try:
+                response_data = response.json()
+                error_code = response_data.get("ErrorCode", "")
+                error_message = response_data.get("ErrorMessage", "")
+                
+                # Check if ErrorCode is "000" (success)
+                if error_code != "000":
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"OTP error: {error_message}"
+                    )
+            except ValueError:
+                # If response is not JSON, check text for errors
+                response_text = response.text.strip().lower()
+                if "error" in response_text or "invalid" in response_text or "fail" in response_text:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"OTP error: {response.text}"
+                    )
         except requests.exceptions.RequestException as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to send OTP: {str(e)}"
             )
         
-        # Store OTP with expiry time (5 minutes)
         expiry_time = datetime.now() + timedelta(minutes=5)
         otp_storage[phone] = {
             "otp": otp,
@@ -76,7 +106,7 @@ async def send_otp(request: Request, otp_request: SendOTPRequest):
         return {
             "message": "OTP sent successfully",
             "phone": phone,
-            "expires_in": 300  # 5 minutes in seconds
+            "expires_in": 300
         }
         
     except HTTPException:

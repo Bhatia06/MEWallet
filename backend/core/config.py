@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
     
+    # SMSINDIAHUB OTP Configuration
+    SMSINDIAHUB_API_KEY: str
+    SMSINDIAHUB_SENDER_ID: str
+    SMSINDIAHUB_GATEWAY_ID: str
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

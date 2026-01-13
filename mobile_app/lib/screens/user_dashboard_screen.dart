@@ -9,6 +9,7 @@ import '../utils/theme.dart';
 import '../utils/auth_error_handler.dart';
 import '../models/models.dart';
 import '../services/websocket_service.dart';
+import '../services/notification_service.dart';
 import 'home_screen.dart';
 import 'link_merchant_screen.dart';
 import 'request_balance_screen.dart';
@@ -32,16 +33,22 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
   List<MerchantUserLink> _filteredLinks = [];
   List<Transaction> _allTransactions = [];
   List<PayRequest> _payRequests = [];
+  List<UserNotification> _notifications = [];
   bool _isLoadingTransactions = false;
   bool _isLoadingPayRequests = false;
+  bool _isLoadingNotifications = false;
   late TabController _tabController;
   StreamSubscription<Map<String, dynamic>>? _wsSubscription;
 
-  // Caching variables
+  // Caching variables - increased for better performance
   DateTime? _lastTransactionLoad;
   DateTime? _lastPayRequestLoad;
+  DateTime? _lastNotificationLoad;
   DateTime? _lastMerchantLoad;
-  static const _cacheDuration = Duration(minutes: 2);
+  static const _cacheDuration = Duration(minutes: 5);
+
+  // Debounce timer for search
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -49,19 +56,29 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
     WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
+      // Lazy load data when switching tabs
       if (_tabController.index == 1) {
         _loadTransactionsIfNeeded();
       } else if (_tabController.index == 2) {
-        _loadTransactionsIfNeeded();
+        _loadNotificationsIfNeeded();
         _loadPayRequestsIfNeeded();
       }
     });
-    _searchController.addListener(_filterLinks);
+    _searchController.addListener(_debouncedFilterLinks);
     _setupWebSocketListener();
+
+    // Request notification permission on startup
+    NotificationService().requestPermission();
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Load transactions first so sorting works properly
-      await _loadTransactions();
-      await _loadData();
+      // Load merchants and transactions in parallel
+      await Future.wait([
+        _loadData().catchError((e) => print('Error loading merchants: $e')),
+        _loadTransactions()
+            .catchError((e) => print('Error loading transactions: $e')),
+        _loadNotifications()
+            .catchError((e) => print('Error loading notifications: $e')),
+      ]);
     });
   }
 
@@ -80,6 +97,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
   @override
   void dispose() {
     _wsSubscription?.cancel();
+    _searchDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
@@ -112,7 +130,59 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
           _invalidateCaches();
           _loadData();
           break;
+        case 'reminder_created':
+          // Reload notifications when new reminder is created
+          print('User Dashboard: New reminder received');
+          _loadNotifications();
+
+          final data = message['data'];
+          final storeName = data['store_name'] ?? 'Store';
+          final reminderMessage =
+              data['message'] ?? 'Please check notifications';
+
+          // Show browser notification
+          NotificationService().showReminderNotification(
+            storeName: storeName,
+            message: reminderMessage,
+            balance: (data['balance'] ?? 0).toDouble(),
+          );
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('New payment reminder from $storeName'),
+                backgroundColor: AppTheme.warningColor,
+                duration: Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'View',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    _tabController.animateTo(2); // Switch to notifications tab
+                  },
+                ),
+              ),
+            );
+          }
+          break;
+        case 'reminder_dismissed':
+          // Remove dismissed reminder from list
+          print('User Dashboard: Reminder dismissed');
+          final data = message['data'];
+          if (mounted && data != null) {
+            setState(() {
+              _notifications.removeWhere((n) => n.id == data['reminder_id']);
+            });
+          }
+          break;
       }
+    });
+  }
+
+  // Debounced search for better performance
+  void _debouncedFilterLinks() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _filterLinks();
     });
   }
 
@@ -183,33 +253,44 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
   void _invalidateCaches() {
     _lastTransactionLoad = null;
     _lastPayRequestLoad = null;
+    _lastNotificationLoad = null;
     _lastMerchantLoad = null;
   }
 
   Future<void> _loadData() async {
+    print('USER DASHBOARD: Starting _loadData');
     final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
     if (authProvider.userId != null && authProvider.token != null) {
       // Check cache validity
       if (_isCacheValid(_lastMerchantLoad) && walletProvider.links.isNotEmpty) {
+        print(
+            'USER DASHBOARD: Using cached merchant data (${walletProvider.links.length} links)');
         return; // Use cached data
       }
 
+      print('USER DASHBOARD: Fetching merchant links...');
       await handleAuthErrors(() async {
         await walletProvider.fetchLinkedMerchants(
           authProvider.userId!,
           authProvider.token!,
         );
+        print(
+            'USER DASHBOARD: Fetched ${walletProvider.links.length} merchant links');
         _lastMerchantLoad = DateTime.now();
         // Force UI update with sorted links
         if (mounted) {
           setState(() {
             _filteredLinks = _sortMerchantsByRecentTransaction(
                 List.from(walletProvider.links));
+            print(
+                'USER DASHBOARD: Sorted and filtered ${_filteredLinks.length} links');
           });
         }
       });
+    } else {
+      print('USER DASHBOARD: No auth credentials for loading data');
     }
   }
 
@@ -229,40 +310,55 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
   }
 
   Future<void> _loadTransactions() async {
+    print('USER DASHBOARD: Starting _loadTransactions');
     final authProvider = context.read<AuthProvider>();
     final walletProvider = context.read<WalletProvider>();
 
-    if (authProvider.userId == null || authProvider.token == null) return;
+    if (authProvider.userId == null || authProvider.token == null) {
+      print('USER DASHBOARD: No auth credentials for transactions');
+      return;
+    }
 
     // Prevent multiple simultaneous loads
-    if (_isLoadingTransactions) return;
+    if (_isLoadingTransactions) {
+      print('USER DASHBOARD: Already loading transactions, skipping');
+      return;
+    }
 
     setState(() {
       _isLoadingTransactions = true;
     });
 
-    await handleAuthErrors(() async {
-      final transactions = await walletProvider.apiService.getUserTransactions(
-        userId: authProvider.userId!,
-        token: authProvider.token!,
-      );
+    try {
+      print('USER DASHBOARD: Fetching transactions...');
+      await handleAuthErrors(() async {
+        final transactions =
+            await walletProvider.apiService.getUserTransactions(
+          userId: authProvider.userId!,
+          token: authProvider.token!,
+        );
 
+        print('USER DASHBOARD: Fetched ${transactions.length} transactions');
+
+        if (mounted) {
+          setState(() {
+            _allTransactions = transactions;
+            _lastTransactionLoad = DateTime.now();
+            // Re-sort merchants after transactions are loaded
+            _filterLinks();
+          });
+        }
+      });
+    } catch (e) {
+      print('USER DASHBOARD: Error loading transactions: $e');
+    } finally {
+      // Always reset loading state
       if (mounted) {
         setState(() {
-          _allTransactions = transactions;
-          _lastTransactionLoad = DateTime.now();
           _isLoadingTransactions = false;
-          // Re-sort merchants after transactions are loaded
-          _filterLinks();
         });
       }
-    });
-
-    // Reset loading state in case of error
-    if (mounted) {
-      setState(() {
-        _isLoadingTransactions = false;
-      });
+      print('USER DASHBOARD: Finished _loadTransactions');
     }
   }
 
@@ -299,6 +395,61 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
       setState(() {
         _isLoadingPayRequests = false;
       });
+    }
+  }
+
+  Future<void> _loadNotificationsIfNeeded() async {
+    if (_lastNotificationLoad != null &&
+        DateTime.now().difference(_lastNotificationLoad!) < _cacheDuration) {
+      return;
+    }
+    await _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
+    final authProvider = context.read<AuthProvider>();
+    final walletProvider = context.read<WalletProvider>();
+
+    if (authProvider.userId == null || authProvider.token == null) {
+      if (mounted) {
+        setState(() {
+          _isLoadingNotifications = false;
+        });
+      }
+      return;
+    }
+
+    // Prevent multiple simultaneous loads
+    if (_isLoadingNotifications) return;
+
+    setState(() {
+      _isLoadingNotifications = true;
+    });
+
+    try {
+      await handleAuthErrors(() async {
+        final notifications =
+            await walletProvider.apiService.getUserNotifications(
+          token: authProvider.token!,
+          userId: authProvider.userId!,
+        );
+
+        if (mounted) {
+          setState(() {
+            _notifications = notifications;
+            _lastNotificationLoad = DateTime.now();
+            _isLoadingNotifications = false;
+          });
+        }
+      });
+    } catch (e) {
+      print('Error loading notifications: $e');
+      // Reset loading state in case of error
+      if (mounted) {
+        setState(() {
+          _isLoadingNotifications = false;
+        });
+      }
     }
   }
 
@@ -398,72 +549,41 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
     final authProvider = context.watch<AuthProvider>();
     final walletProvider = context.watch<WalletProvider>();
 
-    return PopScope(
-      canPop: false,
-      onPopInvoked: (didPop) async {
-        if (didPop) return;
+    print(
+        'USER DASHBOARD BUILD: walletProvider.isLoading=${walletProvider.isLoading}, links=${walletProvider.links.length}, _isLoadingTransactions=$_isLoadingTransactions, _isLoadingNotifications=$_isLoadingNotifications');
 
-        // Show exit confirmation dialog
-        final shouldExit = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Exit App'),
-            content: const Text('Do you want to exit the app?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.errorColor,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Wallet'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const UserSettingsScreen(),
                 ),
-                child: const Text('Exit'),
-              ),
-            ],
+              );
+            },
           ),
-        );
-
-        if (shouldExit == true && context.mounted) {
-          // Exit the app
-          Navigator.of(context).popUntil((route) => route.isFirst);
-          Navigator.of(context).pop();
-        }
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('My Wallet'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const UserSettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ],
-          bottom: TabBar(
-            controller: _tabController,
-            tabs: const [
-              Tab(icon: Icon(Icons.store), text: 'Merchants'),
-              Tab(icon: Icon(Icons.history), text: 'Transactions'),
-              Tab(icon: Icon(Icons.notifications), text: 'Notifications'),
-            ],
-          ),
-        ),
-        body: TabBarView(
+        ],
+        bottom: TabBar(
           controller: _tabController,
-          children: [
-            _buildMerchantsTab(authProvider, walletProvider),
-            _buildTransactionsTab(),
-            _buildNotificationsTab(),
+          tabs: const [
+            Tab(icon: Icon(Icons.store), text: 'Merchants'),
+            Tab(icon: Icon(Icons.history), text: 'Transactions'),
+            Tab(icon: Icon(Icons.notifications), text: 'Notifications'),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildMerchantsTab(authProvider, walletProvider),
+          _buildTransactionsTab(),
+          _buildNotificationsTab(),
+        ],
       ),
     );
   }
@@ -611,154 +731,28 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
 
   Widget _buildNotificationsTab() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final pendingPayRequests =
-        _payRequests.where((r) => r.status == 'pending').toList();
-    final respondedPayRequests =
-        _payRequests.where((r) => r.status != 'pending').toList();
-    final recentTransactions = _allTransactions.take(10).toList();
 
-    final hasContent = pendingPayRequests.isNotEmpty ||
-        respondedPayRequests.isNotEmpty ||
-        recentTransactions.isNotEmpty;
+    if (_isLoadingNotifications && _notifications.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return RefreshIndicator(
       onRefresh: () async {
-        _lastPayRequestLoad = null;
-        _lastTransactionLoad = null;
-        await _loadPayRequests();
-        await _loadTransactions();
+        await _loadNotifications();
       },
-      child: hasContent
-          ? SingleChildScrollView(
+      child: _notifications.isNotEmpty
+          ? ListView.builder(
               padding: EdgeInsets.only(
                 left: 16,
                 right: 16,
                 top: 16,
                 bottom: MediaQuery.of(context).padding.bottom + 16,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Pay Requests Section
-                  if (_isLoadingPayRequests)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(),
-                      ),
-                    ),
-                  if (pendingPayRequests.isNotEmpty) ...[
-                    Text(
-                      'Payment Requests',
-                      style: TextStyle(
-                        color: isDark
-                            ? const Color(0xFFF5F5DC)
-                            : AppTheme.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...pendingPayRequests.map((request) => _buildPayRequestCard(
-                        request,
-                        isPending: true,
-                        isDark: isDark)),
-                    const SizedBox(height: 20),
-                  ],
-                  if (respondedPayRequests.isNotEmpty) ...[
-                    Text(
-                      'Responded Requests',
-                      style: TextStyle(
-                        color:
-                            isDark ? const Color(0xFFE5E5CC) : Colors.grey[700],
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...respondedPayRequests.map((request) =>
-                        _buildPayRequestCard(request,
-                            isPending: false, isDark: isDark)),
-                    const SizedBox(height: 20),
-                  ],
-                  // Recent Transactions Section
-                  if (recentTransactions.isNotEmpty) ...[
-                    Text(
-                      'Recent Transactions',
-                      style: TextStyle(
-                        color:
-                            isDark ? const Color(0xFFE5E5CC) : Colors.grey[700],
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...recentTransactions.map((txn) => Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          elevation: 2,
-                          color:
-                              isDark ? const Color(0xFF252838) : Colors.white,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: txn.isCredit
-                                  ? AppTheme.successColor.withValues(alpha: 0.2)
-                                  : AppTheme.errorColor.withValues(alpha: 0.2),
-                              child: Icon(
-                                txn.isCredit ? Icons.add : Icons.remove,
-                                color: txn.isCredit
-                                    ? AppTheme.successColor
-                                    : AppTheme.errorColor,
-                              ),
-                            ),
-                            title: Text(
-                              txn.isCredit ? 'Balance Added' : 'Purchase Made',
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFFF5F5DC)
-                                    : Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'At ${txn.storeName ?? txn.merchantId}',
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? const Color(0xFFE5E5CC)
-                                        : Colors.grey,
-                                  ),
-                                ),
-                                Text(
-                                  txn.createdAt != null
-                                      ? '${txn.createdAt!.day}/${txn.createdAt!.month}/${txn.createdAt!.year} ${txn.createdAt!.hour}:${txn.createdAt!.minute.toString().padLeft(2, '0')}'
-                                      : 'Unknown date',
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? const Color(0xFFE5E5CC)
-                                            .withValues(alpha: 0.7)
-                                        : Colors.grey[600],
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            trailing: Text(
-                              '${txn.isCredit ? '+' : '-'}₹${txn.amount.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                color: txn.isCredit
-                                    ? AppTheme.successColor
-                                    : AppTheme.errorColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                        )),
-                  ],
-                ],
-              ),
+              itemCount: _notifications.length,
+              itemBuilder: (context, index) {
+                final notification = _notifications[index];
+                return _buildReminderNotificationCard(notification, isDark);
+              },
             )
           : Center(
               child: Padding(
@@ -777,10 +771,399 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
                         fontSize: 16,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Payment reminders will appear here',
+                      style: TextStyle(
+                        color:
+                            isDark ? const Color(0xFFE5E5CC) : Colors.grey[500],
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ],
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildReminderNotificationCard(
+      UserNotification notification, bool isDark) {
+    final isPastDue = notification.reminderDate.isBefore(DateTime.now());
+    final dateStr = _formatNotificationDate(notification.reminderDate);
+
+    return Dismissible(
+      key: Key(notification.id.toString()),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: AppTheme.errorColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      onDismissed: (direction) async {
+        await _dismissNotification(notification.id);
+      },
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        elevation: 2,
+        color: isDark ? const Color(0xFF252838) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: isPastDue
+                ? AppTheme.errorColor.withValues(alpha: 0.3)
+                : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: isPastDue
+                        ? AppTheme.errorColor.withValues(alpha: 0.2)
+                        : AppTheme.primaryColor.withValues(alpha: 0.2),
+                    child: Icon(
+                      isPastDue
+                          ? Icons.notification_important
+                          : Icons.notifications_active,
+                      color: isPastDue
+                          ? AppTheme.errorColor
+                          : AppTheme.primaryColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          notification.storeName,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color:
+                                isDark ? const Color(0xFFF5F5DC) : Colors.black,
+                          ),
+                        ),
+                        Text(
+                          'Balance: ₹${notification.balance.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: notification.balance < 0
+                                ? AppTheme.errorColor
+                                : AppTheme.successColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isPastDue)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'OVERDUE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E1E2E) : Colors.grey[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  notification.message,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? const Color(0xFFE5E5CC) : Colors.black87,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(
+                    Icons.access_time,
+                    size: 14,
+                    color: isPastDue ? AppTheme.errorColor : Colors.grey[600],
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    dateStr,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isPastDue
+                          ? AppTheme.errorColor
+                          : (isDark
+                              ? const Color(0xFFE5E5CC)
+                              : Colors.grey[600]),
+                      fontWeight:
+                          isPastDue ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => _dismissNotification(notification.id),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.primaryColor,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                    ),
+                    child:
+                        const Text('Dismiss', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatNotificationDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final notifDate = DateTime(date.year, date.month, date.day);
+
+    if (notifDate == today) {
+      return 'Today, ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    } else if (notifDate == today.add(const Duration(days: 1))) {
+      return 'Tomorrow, ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    } else if (notifDate.isAfter(today) &&
+        notifDate.isBefore(today.add(const Duration(days: 7)))) {
+      final weekday =
+          ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][date.weekday - 1];
+      return '$weekday, ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    } else {
+      return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    }
+  }
+
+  Future<void> _dismissNotification(int reminderId) async {
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final walletProvider = context.read<WalletProvider>();
+      final token = authProvider.token;
+
+      if (token == null) {
+        throw Exception('Not authenticated');
+      }
+
+      await walletProvider.apiService.dismissNotification(
+        token: token,
+        reminderId: reminderId,
+      );
+
+      // Remove from local list
+      setState(() {
+        _notifications.removeWhere((n) => n.id == reminderId);
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notification dismissed'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to dismiss: ${e.toString()}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  List<Map<String, dynamic>> _generateNotifications(
+      List<MerchantUserLink> merchantLinks) {
+    List<Map<String, dynamic>> notifications = [];
+
+    // Generate notifications for each merchant link
+    for (var link in merchantLinks) {
+      final balance = link.balance;
+      final storeName = link.storeName;
+      final createdAt = link.createdAt;
+
+      // Merchant linked notification
+      notifications.add({
+        'type': 'link_success',
+        'title': 'Successfully Linked',
+        'message': 'You are now linked with $storeName',
+        'timestamp': createdAt,
+        'icon': Icons.link,
+        'color': Colors.green,
+      });
+
+      // Low balance alert (balance below 100)
+      if (balance < 100 && balance >= 0) {
+        notifications.add({
+          'type': 'low_balance',
+          'title': 'Low Balance Alert',
+          'message':
+              'Your balance with $storeName is ₹${balance.toStringAsFixed(2)}',
+          'timestamp': DateTime.now(),
+          'icon': Icons.warning_amber_rounded,
+          'color': Colors.orange,
+        });
+      }
+
+      // Negative balance alert
+      if (balance < 0) {
+        notifications.add({
+          'type': 'negative_balance',
+          'title': 'Negative Balance',
+          'message':
+              'You owe ₹${balance.abs().toStringAsFixed(2)} to $storeName. Please pay back soon.',
+          'timestamp': DateTime.now(),
+          'icon': Icons.error_outline,
+          'color': Colors.red,
+          'actionable': true,
+          'merchantId': link.merchantId,
+          'userId': link.userId,
+        });
+      }
+    }
+
+    // Sort by timestamp (newest first)
+    notifications.sort((a, b) =>
+        (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
+
+    return notifications;
+  }
+
+  Widget _buildNotificationCard(
+      Map<String, dynamic> notification, bool isDark) {
+    final title = notification['title'] as String;
+    final message = notification['message'] as String;
+    final timestamp = notification['timestamp'] as DateTime?;
+    final icon = notification['icon'] as IconData;
+    final color = notification['color'] as Color;
+    final isActionable = notification['actionable'] == true;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      color: isDark ? const Color(0xFF252838) : Colors.white,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: color.withValues(alpha: 0.2),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: isDark ? const Color(0xFFF5F5DC) : Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              message,
+              style: TextStyle(
+                color: isDark ? const Color(0xFFE5E5CC) : Colors.grey[700],
+                fontSize: 13,
+              ),
+            ),
+            if (timestamp != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${timestamp.day}/${timestamp.month}/${timestamp.year} ${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}',
+                style: TextStyle(
+                  color: isDark
+                      ? const Color(0xFFE5E5CC).withValues(alpha: 0.6)
+                      : Colors.grey[500],
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ],
+        ),
+        trailing: isActionable
+            ? IconButton(
+                icon: const Icon(Icons.payment, color: AppTheme.primaryColor),
+                onPressed: () {
+                  // Navigate to payment screen
+                  _showPaymentDialog(
+                    notification['merchantId'] as String,
+                    notification['userId'] as String,
+                  );
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
+  void _showPaymentDialog(String merchantId, String userId) {
+    final walletProvider = context.read<WalletProvider>();
+    final link = walletProvider.links.firstWhere(
+      (l) => l.merchantId == merchantId && l.userId == userId,
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pay Back Amount'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Merchant: ${link.storeName}'),
+            const SizedBox(height: 8),
+            Text(
+              'Amount Due: ₹${link.balance.abs().toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Please visit the merchant to settle your balance.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1019,7 +1402,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.link, color: AppTheme.primaryColor, size: 28),
+            const Icon(Icons.link, color: AppTheme.primaryColor, size: 28),
             const SizedBox(height: 4),
             Text(
               'Link',

@@ -7,6 +7,8 @@ from middleware.auth_middleware import get_current_user, verify_resource_ownersh
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from core.config import get_settings
+from pydantic import BaseModel
+from typing import Optional
 
 settings = get_settings()
 
@@ -41,7 +43,8 @@ async def register_user(user: UserCreate):
             "user_name": user.user_name,
             "user_passw": hashed_password,
             "phone": user.phone,
-            "pin": hashed_pin
+            "pin": hashed_pin,
+            "profile_completed": True  # Profile is complete during registration
         }).execute()
         
         if not result.data:
@@ -195,6 +198,16 @@ async def update_user_profile(user_id: str, profile_data: dict, current_user: di
         verify_resource_ownership(current_user, user_id)
         supabase = get_supabase_client()
         
+        # Get current user data to check existing fields
+        current_user_data = supabase.table("users").select("user_name, phone").eq("id", user_id).execute()
+        if not current_user_data.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        existing_user = current_user_data.data[0]
+        
         update_data = {}
         if "user_name" in profile_data:
             update_data["user_name"] = profile_data["user_name"]
@@ -208,6 +221,14 @@ async def update_user_profile(user_id: str, profile_data: dict, current_user: di
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No valid fields to update"
             )
+        
+        # Check if profile should be marked as completed
+        # Profile is complete if both user_name and phone are present
+        final_user_name = update_data.get("user_name", existing_user.get("user_name"))
+        final_phone = update_data.get("phone", existing_user.get("phone"))
+        
+        if final_user_name and final_phone:
+            update_data["profile_completed"] = True
         
         result = supabase.table("users").update(update_data).eq("id", user_id).execute()
         
@@ -472,4 +493,115 @@ async def delete_user_account(user_id: str, current_user: dict = Depends(get_cur
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred: {str(e)}"
         )
+
+
+# Pydantic model for dismissing reminders
+class DismissReminder(BaseModel):
+    status: str = "dismissed"
+
+
+@router.get("/notifications/{user_id}", response_model=list)
+async def get_user_notifications(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all active reminders/notifications for a user"""
+    try:
+        verify_resource_ownership(current_user, user_id)
+        
+        supabase = get_supabase_client()
+        
+        print(f"NOTIFICATIONS API: Fetching notifications for user {user_id}")
+        
+        # Get all active reminders for this user
+        # Note: Join with merchants table for store name, not merchant_user_links
+        result = supabase.table("reminders").select(
+            "*, merchants(store_name)"
+        ).eq("user_id", user_id).eq("status", "active").order("reminder_date", desc=False).execute()
+        
+        print(f"NOTIFICATIONS API: Query result count: {len(result.data) if result.data else 0}")
+        if result.data:
+            print(f"NOTIFICATIONS API: First reminder: {result.data[0]}")
+        
+        if not result.data:
+            return []
+        
+        # Get the balance from merchant_user_links separately (only merchant_id and balance exist)
+        links_result = supabase.table("merchant_user_links").select(
+            "merchant_id, balance"
+        ).eq("user_id", user_id).execute()
+        
+        # Create a lookup dict for balances by merchant_id
+        balances = {link["merchant_id"]: link["balance"] 
+                   for link in links_result.data} if links_result.data else {}
+        
+        # Format response
+        notifications = []
+        for reminder in result.data:
+            print(f"NOTIFICATIONS API: Processing reminder {reminder['id']}")
+            merchant_id = reminder["merchant_id"]
+            
+            notifications.append({
+                "id": reminder["id"],
+                "merchant_id": merchant_id,
+                "store_name": reminder["merchants"]["store_name"] if reminder.get("merchants") else "Unknown Store",
+                "balance": balances.get(merchant_id, 0),
+                "message": reminder["message"],
+                "reminder_date": reminder["reminder_date"],
+                "status": reminder["status"],
+                "created_at": reminder["created_at"],
+                "type": "payment_reminder"
+            })
+        
+        print(f"NOTIFICATIONS API: Returning {len(notifications)} notifications")
+        return notifications
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"NOTIFICATIONS API ERROR: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred: {str(e)}"
+        )
+
+
+@router.delete("/notifications/{reminder_id}/dismiss", response_model=dict)
+async def dismiss_notification(reminder_id: int, current_user: dict = Depends(get_current_user)):
+    """Delete/dismiss a notification/reminder"""
+    try:
+        user_id = current_user.get("sub")
+        supabase = get_supabase_client()
+        
+        # Verify reminder belongs to user
+        check_result = supabase.table("reminders").select("*").eq("id", reminder_id).eq("user_id", user_id).execute()
+        
+        if not check_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Notification not found or unauthorized"
+            )
+        
+        # Delete the reminder
+        result = supabase.table("reminders").delete().eq("id", reminder_id).execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Notification not found"
+            )
+        
+        # Send WebSocket notification to user
+        from core.websocket_manager import manager
+        await manager.broadcast_reminder_dismissed_to_user(user_id, reminder_id)
+        
+        return {
+            "message": "Notification deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred: {str(e)}"
+        )
+
 
