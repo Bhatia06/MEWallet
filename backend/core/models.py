@@ -4,11 +4,11 @@ from datetime import datetime
 import re
 
 
-# OAuth Models
+
 class GoogleOAuthLogin(BaseModel):
     """Model for Google OAuth login"""
     id_token: str
-    user_type: str = Field(..., pattern="^(user|merchant)$")  # Either user or merchant
+    user_type: str = Field(..., pattern="^(user|merchant)$") 
 
 
 class MerchantOAuthProfileComplete(BaseModel):
@@ -46,7 +46,7 @@ class UserOAuthProfileComplete(BaseModel):
         return v
 
 
-# Merchant Models
+
 class MerchantCreate(BaseModel):
     """Model for creating a new merchant"""
     store_name: str = Field(..., min_length=1, max_length=100)
@@ -117,8 +117,8 @@ class MerchantUserLink(BaseModel):
     
     @validator('pin')
     def validate_pin(cls, v):
-        if not re.match(r'^\d{4,6}$', v):
-            raise ValueError('PIN must be 4-6 digits')
+        if not re.match(r'^\d{4}$', v):
+            raise ValueError('PIN must be 4 digits')
         return v
 
 
@@ -141,8 +141,8 @@ class AddBalance(BaseModel):
     
     @validator('pin')
     def validate_pin(cls, v):
-        if v and not re.match(r'^\d{4,6}$', v):
-            raise ValueError('PIN must be 4-6 digits')
+        if v and not re.match(r'^\d{4}$', v):
+            raise ValueError('PIN must be 4 digits')
         return v
 
 
@@ -174,8 +174,8 @@ class BalanceRequest(BaseModel):
     
     @validator('pin')
     def validate_pin(cls, v):
-        if not re.match(r'^\d{4,6}$', v):
-            raise ValueError('PIN must be 4-6 digits')
+        if not re.match(r'^\d{4}$', v):
+            raise ValueError('PIN must be 4 digits')
         return v
 
 
@@ -187,8 +187,8 @@ class LinkRequest(BaseModel):
     
     @validator('pin')
     def validate_pin(cls, v):
-        if not re.match(r'^\d{4,6}$', v):
-            raise ValueError('PIN must be 4-6 digits')
+        if not re.match(r'^\d{4}$', v):
+            raise ValueError('PIN must be 4 digits')
         return v
 
 

@@ -19,13 +19,10 @@ from routes.pay_request_routes import router as pay_request_router
 from core.database import test_connection
 import uvicorn
 
-# Rate limiter setup
 limiter = Limiter(key_func=get_remote_address)
 
-# Lifespan event handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     print("MEWallet API starting")
     if test_connection():
         print("Database connection successful")
@@ -35,7 +32,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    print("MEWallet API is shutting down...")
+    print("MEWallet API shutting down")
 
 # Create FastAPI app
 app = FastAPI(
